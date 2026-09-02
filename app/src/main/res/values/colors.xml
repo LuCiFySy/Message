@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <color name="messages_background">#F9F7FC</color>
+    <color name="messages_surface">#FFFFFF</color>
+    <color name="messages_surface_variant">#EEEAF3</color>
+
+    <color name="messages_primary">#6750A4</color>
+    <color name="messages_on_primary">#FFFFFF</color>
+
+    <color name="messages_text_primary">#211F26</color>
+    <color name="messages_text_secondary">#5F5B66</color>
+    <color name="messages_text_hint">#77727E</color>
+
+    <color name="messages_divider">#E4E0E7</color>
+
+</resources>

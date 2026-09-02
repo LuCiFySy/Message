@@ -5,12 +5,12 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#FAFAFA">
+    android:background="@color/messages_background">
 
-    <!-- Top app bar -->
+    <!-- Conversation header -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="72dp"
         android:gravity="center_vertical"
         android:paddingStart="8dp"
         android:paddingEnd="12dp">
@@ -21,25 +21,54 @@
             android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Back"
+            android:padding="12dp"
             android:src="@android:drawable/ic_menu_revert" />
 
         <TextView
-            android:id="@+id/conversationTitle"
+            android:id="@+id/conversationAvatar"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="2dp"
+            android:background="@color/messages_surface_variant"
+            android:gravity="center"
+            android:text="?"
+            android:textColor="@color/messages_text_secondary"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:maxLines="1"
-            android:text="Conversation"
-            android:textColor="#202124"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:layout_marginStart="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/conversationTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Conversation"
+                android:textColor="@color/messages_text_primary"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SMS"
+                android:textColor="@color/messages_text_hint"
+                android:textSize="12sp" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="#E5E5E5" />
+        android:background="@color/messages_divider" />
 
     <!-- Messages -->
     <ScrollView
@@ -55,21 +84,21 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="8dp"
-            android:paddingTop="8dp"
-            android:paddingEnd="8dp"
-            android:paddingBottom="8dp" />
+            android:paddingStart="10dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="12dp" />
 
     </ScrollView>
 
-    <!-- Message composer -->
+    <!-- Composer -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:paddingStart="10dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="10dp"
+        android:paddingStart="12dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="12dp"
         android:paddingBottom="10dp">
 
         <EditText
@@ -77,11 +106,13 @@
             android:layout_width="0dp"
             android:layout_height="50dp"
             android:layout_weight="1"
-            android:background="#EEEEEE"
+            android:background="@drawable/bg_search"
             android:hint="Message"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
             android:singleLine="true"
+            android:textColor="@color/messages_text_primary"
+            android:textColorHint="@color/messages_text_hint"
             android:textSize="16sp" />
 
         <ImageButton
@@ -89,8 +120,9 @@
             android:layout_width="50dp"
             android:layout_height="50dp"
             android:layout_marginStart="8dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="@color/messages_primary"
             android:contentDescription="Send"
+            android:padding="13dp"
             android:src="@android:drawable/ic_menu_send" />
 
     </LinearLayout>

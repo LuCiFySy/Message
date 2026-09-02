@@ -3,9 +3,19 @@
 
     <style name="Theme.Messages" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:fontFamily">sans</item>
+
+        <!-- Material You inspired surfaces -->
+        <item name="android:windowBackground">#F9F7FC</item>
+        <item name="android:colorAccent">#6750A4</item>
+
+        <!-- System bars -->
+        <item name="android:statusBarColor">#F9F7FC</item>
+        <item name="android:navigationBarColor">#F9F7FC</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">#FFFFFF</item>
-        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:windowLightNavigationBar">true</item>
+
+        <!-- Better transitions -->
+        <item name="android:windowActionModeOverlay">true</item>
     </style>
 
 </resources>

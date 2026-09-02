@@ -157,45 +157,41 @@ class ConversationActivity : AppCompatActivity() {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = if (outgoing) Gravity.END else Gravity.START
-            setPadding(
-                dp(12),
-                dp(5),
-                dp(12),
-                dp(5)
-            )
+            setPadding(dp(8), dp(5), dp(8), dp(5))
         }
 
         val bubble = TextView(this).apply {
             text = body
             textSize = 16f
-            setTextColor(0xFF202124.toInt())
+            setTextColor(ContextCompat.getColor(this@ConversationActivity, if (outgoing) R.color.messages_on_primary else R.color.messages_text_primary))
             setPadding(
-                dp(16),
-                dp(10),
-                dp(16),
-                dp(10)
+                dp(17),
+                dp(11),
+                dp(17),
+                dp(11)
             )
-            maxWidth = dp(300)
+            maxWidth = dp(320)
+            includeFontPadding = true
 
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = dp(20).toFloat()
 
                 if (outgoing) {
-                    setColor(0xFFE8DEF8.toInt())
+                    setColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_primary))
                 } else {
-                    setColor(0xFFECECEC.toInt())
+                    setColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_surface_variant))
                 }
             }
         }
 
         val time = TextView(this).apply {
             text = formatMessageTime(date)
-            textSize = 11f
-            setTextColor(0xFF777777.toInt())
+            textSize = 10.5f
+            setTextColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_text_hint))
             setPadding(
-                dp(8),
+                dp(6),
                 dp(3),
-                dp(8),
+                dp(6),
                 0
             )
         }
@@ -205,7 +201,13 @@ class ConversationActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            ).apply {
+                if (outgoing) {
+                    marginStart = dp(45)
+                } else {
+                    marginEnd = dp(45)
+                }
+            }
         )
 
         container.addView(

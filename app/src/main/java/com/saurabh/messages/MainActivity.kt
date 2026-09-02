@@ -5,12 +5,15 @@ import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.text.Editable
+import android.text.TextWatcher
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Telephony
 import android.view.Gravity
 import android.view.View
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -31,6 +34,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var conversationList: LinearLayout
     private lateinit var emptyText: TextView
+    private lateinit var searchInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +52,30 @@ class MainActivity : AppCompatActivity() {
 
         conversationList = findViewById(R.id.conversationList)
         emptyText = findViewById(R.id.emptyText)
+
+        searchInput = findViewById(R.id.searchInput)
+
+        searchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(
+                s: CharSequence?,
+                start: Int,
+                count: Int,
+                after: Int
+            ) {
+            }
+
+            override fun onTextChanged(
+                s: CharSequence?,
+                start: Int,
+                before: Int,
+                count: Int
+            ) {
+                loadConversations(s?.toString()?.trim() ?: "")
+            }
+
+            override fun afterTextChanged(s: Editable?) {
+            }
+        })
 
         checkSmsAccess()
     }
@@ -166,7 +194,7 @@ class MainActivity : AppCompatActivity() {
         val unreadCount: Int
     )
 
-    private fun loadConversations() {
+    private fun loadConversations(searchQuery: String = "") {
         conversationList.removeAllViews()
 
         val conversations = LinkedHashMap<String, Conversation>()
@@ -210,6 +238,16 @@ class MainActivity : AppCompatActivity() {
                         cursor.getLong(dateIndex)
                     val read =
                         cursor.getInt(readIndex)
+
+                    if (searchQuery.isNotEmpty()) {
+                        val query = searchQuery.lowercase(Locale.getDefault())
+
+                        if (!address.lowercase(Locale.getDefault()).contains(query) &&
+                            !body.lowercase(Locale.getDefault()).contains(query)
+                        ) {
+                            continue
+                        }
+                    }
 
                     val existing = conversations[threadId]
 
@@ -279,8 +317,8 @@ class MainActivity : AppCompatActivity() {
             text = initial
             textSize = 20f
             gravity = Gravity.CENTER
-            setTextColor(0xFFFFFFFF.toInt())
-            setBackgroundColor(0xFF777777.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_on_primary))
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.messages_surface_variant))
         }
 
         row.addView(
@@ -302,14 +340,14 @@ class MainActivity : AppCompatActivity() {
         val name = TextView(this).apply {
             text = conversation.address
             textSize = 17f
-            setTextColor(0xFF202124.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_text_primary))
             maxLines = 1
         }
 
         val preview = TextView(this).apply {
             text = conversation.body.replace("\n", " ")
             textSize = 14f
-            setTextColor(0xFF777777.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_text_secondary))
             maxLines = 1
         }
 
@@ -325,7 +363,7 @@ class MainActivity : AppCompatActivity() {
         val time = TextView(this).apply {
             text = formatDate(conversation.date)
             textSize = 12f
-            setTextColor(0xFF777777.toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_text_secondary))
         }
 
         rightContainer.addView(time)
@@ -335,8 +373,8 @@ class MainActivity : AppCompatActivity() {
                 text = conversation.unreadCount.toString()
                 textSize = 12f
                 gravity = Gravity.CENTER
-                setTextColor(0xFFFFFFFF.toInt())
-                setBackgroundColor(0xFF6750A4.toInt())
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_on_primary))
+                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.messages_primary))
                 setPadding(
                     dp(7),
                     dp(3),
