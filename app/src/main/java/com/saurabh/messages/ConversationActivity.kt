@@ -4,15 +4,17 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
 import android.provider.Telephony
 import android.telephony.SmsManager
 import android.view.Gravity
-import android.view.View
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
@@ -35,6 +37,21 @@ class ConversationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_conversation)
+
+        val conversationRoot = findViewById<View>(R.id.conversationRoot)
+
+        ViewCompat.setOnApplyWindowInsetsListener(conversationRoot) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(
+                view.paddingLeft,
+                systemBars.top,
+                view.paddingRight,
+                systemBars.bottom
+            )
+            insets
+        }
+
+        ViewCompat.requestApplyInsets(conversationRoot)
 
         threadId = intent.getStringExtra("thread_id") ?: ""
         address = intent.getStringExtra("address") ?: "Unknown"
