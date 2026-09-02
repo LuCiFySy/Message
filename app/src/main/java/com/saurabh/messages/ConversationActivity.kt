@@ -1,0 +1,330 @@
+package com.saurabh.messages
+
+import android.Manifest
+import android.content.ContentValues
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.provider.Telephony
+import android.telephony.SmsManager
+import android.view.Gravity
+import android.view.View
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+class ConversationActivity : AppCompatActivity() {
+
+    companion object {
+        private const val SEND_SMS_REQUEST = 200
+    }
+
+    private var threadId: String = ""
+    private var address: String = ""
+
+    private lateinit var messageList: LinearLayout
+    private lateinit var messageInput: EditText
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        setContentView(R.layout.activity_conversation)
+
+        threadId = intent.getStringExtra("thread_id") ?: ""
+        address = intent.getStringExtra("address") ?: "Unknown"
+
+        findViewById<TextView>(R.id.conversationTitle).text = address
+
+        messageList = findViewById(R.id.messageList)
+        messageInput = findViewById(R.id.messageInput)
+
+        findViewById<View>(R.id.backButton).setOnClickListener {
+            finish()
+        }
+
+        findViewById<View>(R.id.sendButton).setOnClickListener {
+            sendMessage()
+        }
+
+        markConversationRead()
+        loadMessages()
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        if (::messageList.isInitialized) {
+            markConversationRead()
+            loadMessages()
+        }
+    }
+
+    private fun loadMessages() {
+        messageList.removeAllViews()
+
+        val projection = arrayOf(
+            Telephony.Sms._ID,
+            Telephony.Sms.THREAD_ID,
+            Telephony.Sms.ADDRESS,
+            Telephony.Sms.BODY,
+            Telephony.Sms.DATE,
+            Telephony.Sms.TYPE
+        )
+
+        try {
+            contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                projection,
+                "${Telephony.Sms.THREAD_ID}=?",
+                arrayOf(threadId),
+                "${Telephony.Sms.DATE} ASC"
+            )?.use { cursor ->
+
+                val addressIndex =
+                    cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                val bodyIndex =
+                    cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                val dateIndex =
+                    cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+                val typeIndex =
+                    cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
+
+                while (cursor.moveToNext()) {
+                    val body = cursor.getString(bodyIndex) ?: ""
+                    val date = cursor.getLong(dateIndex)
+                    val type = cursor.getInt(typeIndex)
+                    val messageAddress =
+                        cursor.getString(addressIndex) ?: address
+
+                    addMessageBubble(
+                        body = body,
+                        date = date,
+                        type = type,
+                        messageAddress = messageAddress
+                    )
+                }
+            }
+
+            messageList.post {
+                val scrollView = findViewById<android.widget.ScrollView>(
+                    R.id.messageScroll
+                )
+                scrollView.fullScroll(View.FOCUS_DOWN)
+            }
+
+        } catch (e: SecurityException) {
+            Toast.makeText(
+                this,
+                "SMS permission is required",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun addMessageBubble(
+        body: String,
+        date: Long,
+        type: Int,
+        messageAddress: String
+    ) {
+        val outgoing =
+            type == Telephony.Sms.MESSAGE_TYPE_SENT ||
+            type == Telephony.Sms.MESSAGE_TYPE_OUTBOX
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = if (outgoing) Gravity.END else Gravity.START
+            setPadding(
+                dp(12),
+                dp(5),
+                dp(12),
+                dp(5)
+            )
+        }
+
+        val bubble = TextView(this).apply {
+            text = body
+            textSize = 16f
+            setTextColor(0xFF202124.toInt())
+            setPadding(
+                dp(16),
+                dp(10),
+                dp(16),
+                dp(10)
+            )
+            maxWidth = dp(300)
+
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(20).toFloat()
+
+                if (outgoing) {
+                    setColor(0xFFE8DEF8.toInt())
+                } else {
+                    setColor(0xFFECECEC.toInt())
+                }
+            }
+        }
+
+        val time = TextView(this).apply {
+            text = formatMessageTime(date)
+            textSize = 11f
+            setTextColor(0xFF777777.toInt())
+            setPadding(
+                dp(8),
+                dp(3),
+                dp(8),
+                0
+            )
+        }
+
+        container.addView(
+            bubble,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        container.addView(
+            time,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        messageList.addView(
+            container,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+    }
+
+    private fun sendMessage() {
+        val body = messageInput.text.toString().trim()
+
+        if (body.isEmpty()) return
+
+        if (address.isBlank() || address == "Unknown") {
+            Toast.makeText(
+                this,
+                "Invalid phone number",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        if (
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.SEND_SMS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.SEND_SMS),
+                SEND_SMS_REQUEST
+            )
+            return
+        }
+
+        try {
+            val smsManager = SmsManager.getDefault()
+
+            smsManager.sendTextMessage(
+                address,
+                null,
+                body,
+                null,
+                null
+            )
+
+            val values = ContentValues().apply {
+                put(Telephony.Sms.ADDRESS, address)
+                put(Telephony.Sms.BODY, body)
+                put(Telephony.Sms.DATE, System.currentTimeMillis())
+                put(Telephony.Sms.READ, 1)
+                put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT)
+                put(Telephony.Sms.THREAD_ID, threadId)
+            }
+
+            try {
+                contentResolver.insert(
+                    Telephony.Sms.Sent.CONTENT_URI,
+                    values
+                )
+            } catch (_: Exception) {
+                // Sending already succeeded.
+            }
+
+            messageInput.text.clear()
+            loadMessages()
+
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                "Failed to send message",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun markConversationRead() {
+        if (threadId.isBlank()) return
+
+        try {
+            val values = ContentValues().apply {
+                put(Telephony.Sms.READ, 1)
+            }
+
+            contentResolver.update(
+                Telephony.Sms.CONTENT_URI,
+                values,
+                "${Telephony.Sms.THREAD_ID}=? AND ${Telephony.Sms.READ}=0",
+                arrayOf(threadId)
+            )
+        } catch (_: Exception) {
+            // Ignore provider errors.
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
+
+        if (requestCode == SEND_SMS_REQUEST &&
+            grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        ) {
+            sendMessage()
+        }
+    }
+
+    private fun formatMessageTime(timestamp: Long): String {
+        return SimpleDateFormat(
+            "h:mm a",
+            Locale.getDefault()
+        ).format(Date(timestamp))
+    }
+
+    private fun dp(value: Int): Int {
+        return (
+            value * resources.displayMetrics.density
+        ).toInt()
+    }
+}

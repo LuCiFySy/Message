@@ -1,9 +1,12 @@
 package com.saurabh.messages
 
 import android.Manifest
+import android.app.role.RoleManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Telephony
 import android.view.Gravity
@@ -21,6 +24,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SMS_PERMISSION_REQUEST = 100
+        private const val SMS_ROLE_REQUEST = 101
     }
 
     private lateinit var conversationList: LinearLayout
@@ -33,18 +37,61 @@ class MainActivity : AppCompatActivity() {
         conversationList = findViewById(R.id.conversationList)
         emptyText = findViewById(R.id.emptyText)
 
-        if (hasSmsPermission()) {
-            loadConversations()
-        } else {
-            requestSmsPermission()
-        }
+        checkSmsAccess()
     }
 
     override fun onResume() {
         super.onResume()
 
-        if (::conversationList.isInitialized && hasSmsPermission()) {
-            loadConversations()
+        if (::conversationList.isInitialized) {
+            checkSmsAccess()
+        }
+    }
+
+    private fun checkSmsAccess() {
+        if (isDefaultSmsApp()) {
+            if (hasSmsPermission()) {
+                loadConversations()
+            } else {
+                requestSmsPermission()
+            }
+        } else {
+            conversationList.removeAllViews()
+            emptyText.visibility = View.VISIBLE
+            emptyText.text = "Set Messages as the default SMS app to continue"
+        }
+    }
+
+    private fun isDefaultSmsApp(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(RoleManager::class.java)
+            roleManager?.isRoleHeld(RoleManager.ROLE_SMS) == true
+        } else {
+            Telephony.Sms.getDefaultSmsPackage(this) == packageName
+        }
+    }
+
+    private fun requestDefaultSmsApp() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(RoleManager::class.java)
+
+            if (roleManager != null &&
+                roleManager.isRoleAvailable(RoleManager.ROLE_SMS)
+            ) {
+                val intent = roleManager.createRequestRoleIntent(
+                    RoleManager.ROLE_SMS
+                )
+                startActivityForResult(intent, SMS_ROLE_REQUEST)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                putExtra(
+                    Telephony.Sms.Intents.EXTRA_PACKAGE_NAME,
+                    packageName
+                )
+            }
+            startActivityForResult(intent, SMS_ROLE_REQUEST)
         }
     }
 
@@ -63,12 +110,28 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == SMS_ROLE_REQUEST) {
+            checkSmsAccess()
+        }
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
 
         if (requestCode == SMS_PERMISSION_REQUEST) {
             if (grantResults.isNotEmpty() &&
@@ -113,18 +176,28 @@ class MainActivity : AppCompatActivity() {
                 "${Telephony.Sms.DATE} DESC"
             )?.use { cursor ->
 
-                val threadIdIndex = cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
-                val addressIndex = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
-                val bodyIndex = cursor.getColumnIndex(Telephony.Sms.BODY)
-                val dateIndex = cursor.getColumnIndex(Telephony.Sms.DATE)
-                val readIndex = cursor.getColumnIndex(Telephony.Sms.READ)
+                val threadIdIndex =
+                    cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
+                val addressIndex =
+                    cursor.getColumnIndex(Telephony.Sms.ADDRESS)
+                val bodyIndex =
+                    cursor.getColumnIndex(Telephony.Sms.BODY)
+                val dateIndex =
+                    cursor.getColumnIndex(Telephony.Sms.DATE)
+                val readIndex =
+                    cursor.getColumnIndex(Telephony.Sms.READ)
 
                 while (cursor.moveToNext()) {
-                    val threadId = cursor.getString(threadIdIndex) ?: continue
-                    val address = cursor.getString(addressIndex) ?: "Unknown"
-                    val body = cursor.getString(bodyIndex) ?: ""
-                    val date = cursor.getLong(dateIndex)
-                    val read = cursor.getInt(readIndex)
+                    val threadId =
+                        cursor.getString(threadIdIndex) ?: continue
+                    val address =
+                        cursor.getString(addressIndex) ?: "Unknown"
+                    val body =
+                        cursor.getString(bodyIndex) ?: ""
+                    val date =
+                        cursor.getLong(dateIndex)
+                    val read =
+                        cursor.getInt(readIndex)
 
                     val existing = conversations[threadId]
 
@@ -145,7 +218,8 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: SecurityException) {
             emptyText.visibility = View.VISIBLE
-            emptyText.text = "SMS permission is required to show messages"
+            emptyText.text =
+                "SMS permission is required to show messages"
             return
         } catch (e: Exception) {
             emptyText.visibility = View.VISIBLE
@@ -170,12 +244,16 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(76)
-            setPadding(dp(20), dp(10), dp(16), dp(10))
+            setPadding(
+                dp(20),
+                dp(10),
+                dp(16),
+                dp(10)
+            )
             isClickable = true
             isFocusable = true
-            background = getDrawable(
-                android.R.drawable.list_selector_background
-            )
+            background =
+                getDrawable(android.R.drawable.list_selector_background)
         }
 
         val avatar = TextView(this).apply {
@@ -195,14 +273,18 @@ class MainActivity : AppCompatActivity() {
 
         row.addView(
             avatar,
-            LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+            LinearLayout.LayoutParams(
+                dp(48),
+                dp(48)
+            ).apply {
                 marginEnd = dp(14)
             }
         )
 
         val textContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            layoutParams =
+                LinearLayout.LayoutParams(0, -2, 1f)
         }
 
         val name = TextView(this).apply {
@@ -243,7 +325,12 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 setTextColor(0xFFFFFFFF.toInt())
                 setBackgroundColor(0xFF6750A4.toInt())
-                setPadding(dp(7), dp(3), dp(7), dp(3))
+                setPadding(
+                    dp(7),
+                    dp(3),
+                    dp(7),
+                    dp(3)
+                )
             }
 
             rightContainer.addView(
@@ -258,6 +345,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         row.addView(rightContainer)
+
+        row.setOnClickListener {
+            val intent = Intent(this, ConversationActivity::class.java).apply {
+                putExtra("thread_id", conversation.threadId)
+                putExtra("address", conversation.address)
+            }
+            startActivity(intent)
+        }
 
         conversationList.addView(
             row,
@@ -274,13 +369,21 @@ class MainActivity : AppCompatActivity() {
         val day = 24 * 60 * 60 * 1000L
 
         return if (now - timestamp < day) {
-            SimpleDateFormat("h:mm a", Locale.getDefault()).format(date)
+            SimpleDateFormat(
+                "h:mm a",
+                Locale.getDefault()
+            ).format(date)
         } else {
-            SimpleDateFormat("dd/MM/yy", Locale.getDefault()).format(date)
+            SimpleDateFormat(
+                "dd/MM/yy",
+                Locale.getDefault()
+            ).format(date)
         }
     }
 
     private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
+        return (
+            value * resources.displayMetrics.density
+        ).toInt()
     }
 }
