@@ -81,72 +81,10 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        findViewById<TextView>(R.id.unreadChip).setOnClickListener {
-            showUnreadOnly = !showUnreadOnly
-
-            findViewById<TextView>(R.id.unreadChip).setBackgroundResource(
-                if (showUnreadOnly) R.drawable.bg_chip_selected
-                else R.drawable.bg_chip
-            )
-
-            findViewById<TextView>(R.id.unreadChip).setTextColor(
-                ContextCompat.getColor(
-                    this,
-                    if (showUnreadOnly) R.color.messages_text_primary
-                    else R.color.messages_text_secondary
-                )
-            )
-
-            loadConversations(searchInput.text.toString().trim())
-        }
-
-        findViewById<TextView>(R.id.archivedChip).setOnClickListener {
-            showArchivedOnly = !showArchivedOnly
-
-            findViewById<TextView>(R.id.archivedChip).setBackgroundResource(
-                if (showArchivedOnly) R.drawable.bg_chip_selected
-                else R.drawable.bg_chip
-            )
-
-            findViewById<TextView>(R.id.archivedChip).setTextColor(
-                ContextCompat.getColor(
-                    this,
-                    if (showArchivedOnly) R.color.messages_text_primary
-                    else R.color.messages_text_secondary
-                )
-            )
-
-            if (showArchivedOnly) {
-                showUnreadOnly = false
-
-                findViewById<TextView>(R.id.unreadChip).setBackgroundResource(
-                    R.drawable.bg_chip
-                )
-
-                findViewById<TextView>(R.id.unreadChip).setTextColor(
-                    ContextCompat.getColor(
-                        this,
-                        R.color.messages_text_secondary
-                    )
-                )
-            }
-
-            loadConversations(searchInput.text.toString().trim())
-        }
-
         checkSmsAccess()
     }
 
     private var firstResume = true
-    private var showUnreadOnly = false
-    private var showArchivedOnly = false
-
-    private val archivedThreads: MutableSet<String>
-        get() = getSharedPreferences("messages_settings", MODE_PRIVATE)
-            .getStringSet("archived_threads", emptySet())
-            ?.toMutableSet()
-            ?: mutableSetOf()
-
 
     override fun onResume() {
         super.onResume()
@@ -420,27 +358,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                val archived = archivedThreads
-
-                val archiveIterator = conversations.entries.iterator()
-                while (archiveIterator.hasNext()) {
-                    val entry = archiveIterator.next()
-                    val isArchived = archived.contains(entry.key)
-
-                    if (showArchivedOnly != isArchived) {
-                        archiveIterator.remove()
-                    }
-                }
-
-                if (showUnreadOnly) {
-                    val iterator = conversations.entries.iterator()
-                    while (iterator.hasNext()) {
-                        if (iterator.next().value.unreadCount == 0) {
-                            iterator.remove()
-                        }
-                    }
-                }
-
                 runOnUiThread {
                     conversationList.removeAllViews()
 
@@ -476,28 +393,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
-    }
-
-    private fun toggleArchive(threadId: String) {
-        val prefs = getSharedPreferences("messages_settings", MODE_PRIVATE)
-        val archived = prefs.getStringSet(
-            "archived_threads",
-            emptySet()
-        )?.toMutableSet() ?: mutableSetOf()
-
-        val wasArchived = archived.contains(threadId)
-
-        if (wasArchived) {
-            archived.remove(threadId)
-        } else {
-            archived.add(threadId)
-        }
-
-        prefs.edit()
-            .putStringSet("archived_threads", archived)
-            .apply()
-
-        loadConversations(searchInput.text.toString().trim())
     }
 
     private fun addConversationView(conversation: Conversation) {
@@ -584,21 +479,21 @@ class MainActivity : AppCompatActivity() {
                 text = conversation.unreadCount.toString()
                 textSize = 12f
                 gravity = Gravity.CENTER
-                includeFontPadding = false
-                setTextColor(
-                    ContextCompat.getColor(
-                        this@MainActivity,
-                        R.color.messages_on_primary
-                    )
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_on_primary))
+                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.messages_primary))
+                setPadding(
+                    dp(7),
+                    dp(3),
+                    dp(7),
+                    dp(3)
                 )
-                setBackgroundResource(R.drawable.bg_unread)
             }
 
             rightContainer.addView(
                 unread,
                 LinearLayout.LayoutParams(
-                    dp(28),
-                    dp(28)
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     topMargin = dp(6)
                 }
@@ -606,11 +501,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         row.addView(rightContainer)
-
-        row.setOnLongClickListener {
-            toggleArchive(conversation.threadId)
-            true
-        }
 
         row.setOnClickListener {
             val intent = Intent(this, ConversationActivity::class.java).apply {

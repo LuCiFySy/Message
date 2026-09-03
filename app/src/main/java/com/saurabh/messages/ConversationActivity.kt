@@ -1,11 +1,11 @@
 package com.saurabh.messages
-
+import android.provider.Telephony
+import android.provider.ContactsContract
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
-import android.provider.Telephony
 import android.telephony.SmsManager
 import android.view.Gravity
 import android.widget.EditText
@@ -56,7 +56,18 @@ class ConversationActivity : AppCompatActivity() {
         threadId = intent.getStringExtra("thread_id") ?: ""
         address = intent.getStringExtra("address") ?: "Unknown"
 
-        findViewById<TextView>(R.id.conversationTitle).text = address
+val contactName = getContactName(address) ?: address
+
+findViewById<TextView>(R.id.conversationTitle).text = contactName
+        findViewById<TextView>(R.id.conversationAddress).text = address
+
+        val avatar = findViewById<TextView>(R.id.conversationAvatar)
+        avatar.text = contactName
+            .filter { it.isLetterOrDigit() }
+            .firstOrNull()
+            ?.uppercaseChar()
+            ?.toString()
+            ?: "?"
 
         messageList = findViewById(R.id.messageList)
         messageInput = findViewById(R.id.messageInput)
@@ -341,7 +352,36 @@ class ConversationActivity : AppCompatActivity() {
         ).format(Date(timestamp))
     }
 
-    private fun dp(value: Int): Int {
+
+private fun getContactName(phoneNumber: String): String? {
+    return try {
+        val lookupUri = ContactsContract.PhoneLookup.CONTENT_FILTER_URI
+            .buildUpon()
+            .appendPath(phoneNumber)
+            .build()
+
+        contentResolver.query(
+            lookupUri,
+            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getString(
+                    cursor.getColumnIndexOrThrow(
+                        ContactsContract.PhoneLookup.DISPLAY_NAME
+                    )
+                )
+            } else {
+                null
+            }
+        }
+    } catch (e: Exception) {
+        null
+    }
+}   
+ private fun dp(value: Int): Int {
         return (
             value * resources.displayMetrics.density
         ).toInt()

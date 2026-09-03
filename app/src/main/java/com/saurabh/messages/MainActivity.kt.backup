@@ -81,80 +81,11 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        findViewById<TextView>(R.id.unreadChip).setOnClickListener {
-            showUnreadOnly = !showUnreadOnly
-
-            findViewById<TextView>(R.id.unreadChip).setBackgroundResource(
-                if (showUnreadOnly) R.drawable.bg_chip_selected
-                else R.drawable.bg_chip
-            )
-
-            findViewById<TextView>(R.id.unreadChip).setTextColor(
-                ContextCompat.getColor(
-                    this,
-                    if (showUnreadOnly) R.color.messages_text_primary
-                    else R.color.messages_text_secondary
-                )
-            )
-
-            loadConversations(searchInput.text.toString().trim())
-        }
-
-        findViewById<TextView>(R.id.archivedChip).setOnClickListener {
-            showArchivedOnly = !showArchivedOnly
-
-            findViewById<TextView>(R.id.archivedChip).setBackgroundResource(
-                if (showArchivedOnly) R.drawable.bg_chip_selected
-                else R.drawable.bg_chip
-            )
-
-            findViewById<TextView>(R.id.archivedChip).setTextColor(
-                ContextCompat.getColor(
-                    this,
-                    if (showArchivedOnly) R.color.messages_text_primary
-                    else R.color.messages_text_secondary
-                )
-            )
-
-            if (showArchivedOnly) {
-                showUnreadOnly = false
-
-                findViewById<TextView>(R.id.unreadChip).setBackgroundResource(
-                    R.drawable.bg_chip
-                )
-
-                findViewById<TextView>(R.id.unreadChip).setTextColor(
-                    ContextCompat.getColor(
-                        this,
-                        R.color.messages_text_secondary
-                    )
-                )
-            }
-
-            loadConversations(searchInput.text.toString().trim())
-        }
-
         checkSmsAccess()
     }
 
-    private var firstResume = true
-    private var showUnreadOnly = false
-    private var showArchivedOnly = false
-
-    private val archivedThreads: MutableSet<String>
-        get() = getSharedPreferences("messages_settings", MODE_PRIVATE)
-            .getStringSet("archived_threads", emptySet())
-            ?.toMutableSet()
-            ?: mutableSetOf()
-
-
     override fun onResume() {
         super.onResume()
-
-        if (firstResume) {
-            firstResume = false
-            return
-        }
 
         if (::conversationList.isInitialized) {
             checkSmsAccess()
@@ -337,167 +268,108 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadConversations(searchQuery: String = "") {
-        val queryText = searchQuery.trim()
+        conversationList.removeAllViews()
 
-        Thread {
-            val conversations = LinkedHashMap<String, Conversation>()
+        val conversations = LinkedHashMap<String, Conversation>()
 
-            val projection = arrayOf(
-                Telephony.Sms.THREAD_ID,
-                Telephony.Sms.ADDRESS,
-                Telephony.Sms.BODY,
-                Telephony.Sms.DATE,
-                Telephony.Sms.READ
-            )
+        val projection = arrayOf(
+            Telephony.Sms.THREAD_ID,
+            Telephony.Sms.ADDRESS,
+            Telephony.Sms.BODY,
+            Telephony.Sms.DATE,
+            Telephony.Sms.READ
+        )
 
-            try {
-                contentResolver.query(
-                    Uri.parse("content://sms"),
-                    projection,
-                    null,
-                    null,
-                    "${Telephony.Sms.DATE} DESC"
-                )?.use { cursor ->
+        try {
+            contentResolver.query(
+                Uri.parse("content://sms"),
+                projection,
+                null,
+                null,
+                "${Telephony.Sms.DATE} DESC"
+            )?.use { cursor ->
 
-                    val threadIdIndex =
-                        cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
-                    val addressIndex =
-                        cursor.getColumnIndex(Telephony.Sms.ADDRESS)
-                    val bodyIndex =
-                        cursor.getColumnIndex(Telephony.Sms.BODY)
-                    val dateIndex =
-                        cursor.getColumnIndex(Telephony.Sms.DATE)
-                    val readIndex =
-                        cursor.getColumnIndex(Telephony.Sms.READ)
+                val threadIdIndex =
+                    cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
+                val addressIndex =
+                    cursor.getColumnIndex(Telephony.Sms.ADDRESS)
+                val bodyIndex =
+                    cursor.getColumnIndex(Telephony.Sms.BODY)
+                val dateIndex =
+                    cursor.getColumnIndex(Telephony.Sms.DATE)
+                val readIndex =
+                    cursor.getColumnIndex(Telephony.Sms.READ)
 
-                    while (cursor.moveToNext()) {
-                        val threadId =
-                            cursor.getString(threadIdIndex) ?: continue
-                        val address =
-                            cursor.getString(addressIndex) ?: "Unknown"
-                        val body =
-                            cursor.getString(bodyIndex) ?: ""
-                        val date =
-                            cursor.getLong(dateIndex)
-                        val read =
-                            cursor.getInt(readIndex)
+                while (cursor.moveToNext()) {
+                    val threadId =
+                        cursor.getString(threadIdIndex) ?: continue
+                    val address =
+                        cursor.getString(addressIndex) ?: "Unknown"
+                    val body =
+                        cursor.getString(bodyIndex) ?: ""
+                    val date =
+                        cursor.getLong(dateIndex)
+                    val read =
+                        cursor.getInt(readIndex)
 
-                        val displayName = if (contactNameCache.containsKey(address)) {
-                            contactNameCache[address] ?: address
-                        } else {
-                            val name = getContactName(address)
-                            contactNameCache[address] = name
-                            name ?: address
-                        }
-
-                        if (queryText.isNotEmpty()) {
-                            val query = queryText.lowercase(Locale.getDefault())
-
-                            if (!address.lowercase(Locale.getDefault()).contains(query) &&
-                                !displayName.lowercase(Locale.getDefault()).contains(query) &&
-                                !body.lowercase(Locale.getDefault()).contains(query)
-                            ) {
-                                continue
-                            }
-                        }
-
-                        val existing = conversations[threadId]
-
-                        if (existing == null) {
-                            conversations[threadId] = Conversation(
-                                threadId = threadId,
-                                address = address,
-                                displayName = displayName,
-                                body = body,
-                                date = date,
-                                unreadCount = if (read == 0) 1 else 0
-                            )
-                        } else if (read == 0) {
-                            conversations[threadId] = existing.copy(
-                                unreadCount = existing.unreadCount + 1
-                            )
-                        }
-                    }
-                }
-
-                val archived = archivedThreads
-
-                val archiveIterator = conversations.entries.iterator()
-                while (archiveIterator.hasNext()) {
-                    val entry = archiveIterator.next()
-                    val isArchived = archived.contains(entry.key)
-
-                    if (showArchivedOnly != isArchived) {
-                        archiveIterator.remove()
-                    }
-                }
-
-                if (showUnreadOnly) {
-                    val iterator = conversations.entries.iterator()
-                    while (iterator.hasNext()) {
-                        if (iterator.next().value.unreadCount == 0) {
-                            iterator.remove()
-                        }
-                    }
-                }
-
-                runOnUiThread {
-                    conversationList.removeAllViews()
-
-                    if (conversations.isEmpty()) {
-                        emptyText.visibility = View.VISIBLE
-                        emptyText.text =
-                            if (queryText.isEmpty()) {
-                                "No conversations yet"
-                            } else {
-                                "No matching conversations"
-                            }
+                    val displayName = if (contactNameCache.containsKey(address)) {
+                        contactNameCache[address] ?: address
                     } else {
-                        emptyText.visibility = View.GONE
+                        val name = getContactName(address)
+                        contactNameCache[address] = name
+                        name ?: address
+                    }
 
-                        conversations.values.forEach { conversation ->
-                            addConversationView(conversation)
+                    if (searchQuery.isNotEmpty()) {
+                        val query = searchQuery.lowercase(Locale.getDefault())
+
+                        if (!address.lowercase(Locale.getDefault()).contains(query) &&
+                            !displayName.lowercase(Locale.getDefault()).contains(query) &&
+                            !body.lowercase(Locale.getDefault()).contains(query)
+                        ) {
+                            continue
                         }
                     }
-                }
 
-            } catch (e: SecurityException) {
-                runOnUiThread {
-                    conversationList.removeAllViews()
-                    emptyText.visibility = View.VISIBLE
-                    emptyText.text =
-                        "SMS permission is required to show messages"
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    conversationList.removeAllViews()
-                    emptyText.visibility = View.VISIBLE
-                    emptyText.text = "Unable to load messages"
+                    val existing = conversations[threadId]
+
+                    if (existing == null) {
+                        conversations[threadId] = Conversation(
+                            threadId = threadId,
+                            address = address,
+                            displayName = displayName,
+                            body = body,
+                            date = date,
+                            unreadCount = if (read == 0) 1 else 0
+                        )
+                    } else if (read == 0) {
+                        conversations[threadId] = existing.copy(
+                            unreadCount = existing.unreadCount + 1
+                        )
+                    }
                 }
             }
-        }.start()
-    }
-
-    private fun toggleArchive(threadId: String) {
-        val prefs = getSharedPreferences("messages_settings", MODE_PRIVATE)
-        val archived = prefs.getStringSet(
-            "archived_threads",
-            emptySet()
-        )?.toMutableSet() ?: mutableSetOf()
-
-        val wasArchived = archived.contains(threadId)
-
-        if (wasArchived) {
-            archived.remove(threadId)
-        } else {
-            archived.add(threadId)
+        } catch (e: SecurityException) {
+            emptyText.visibility = View.VISIBLE
+            emptyText.text =
+                "SMS permission is required to show messages"
+            return
+        } catch (e: Exception) {
+            emptyText.visibility = View.VISIBLE
+            emptyText.text = "Unable to load messages"
+            return
         }
 
-        prefs.edit()
-            .putStringSet("archived_threads", archived)
-            .apply()
+        if (conversations.isEmpty()) {
+            emptyText.visibility = View.VISIBLE
+            emptyText.text = "No conversations yet"
+        } else {
+            emptyText.visibility = View.GONE
 
-        loadConversations(searchInput.text.toString().trim())
+            conversations.values.forEach { conversation ->
+                addConversationView(conversation)
+            }
+        }
     }
 
     private fun addConversationView(conversation: Conversation) {
@@ -584,21 +456,21 @@ class MainActivity : AppCompatActivity() {
                 text = conversation.unreadCount.toString()
                 textSize = 12f
                 gravity = Gravity.CENTER
-                includeFontPadding = false
-                setTextColor(
-                    ContextCompat.getColor(
-                        this@MainActivity,
-                        R.color.messages_on_primary
-                    )
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_on_primary))
+                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.messages_primary))
+                setPadding(
+                    dp(7),
+                    dp(3),
+                    dp(7),
+                    dp(3)
                 )
-                setBackgroundResource(R.drawable.bg_unread)
             }
 
             rightContainer.addView(
                 unread,
                 LinearLayout.LayoutParams(
-                    dp(28),
-                    dp(28)
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     topMargin = dp(6)
                 }
@@ -606,11 +478,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         row.addView(rightContainer)
-
-        row.setOnLongClickListener {
-            toggleArchive(conversation.threadId)
-            true
-        }
 
         row.setOnClickListener {
             val intent = Intent(this, ConversationActivity::class.java).apply {

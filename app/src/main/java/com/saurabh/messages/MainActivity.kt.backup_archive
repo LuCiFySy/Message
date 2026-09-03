@@ -100,53 +100,11 @@ class MainActivity : AppCompatActivity() {
             loadConversations(searchInput.text.toString().trim())
         }
 
-        findViewById<TextView>(R.id.archivedChip).setOnClickListener {
-            showArchivedOnly = !showArchivedOnly
-
-            findViewById<TextView>(R.id.archivedChip).setBackgroundResource(
-                if (showArchivedOnly) R.drawable.bg_chip_selected
-                else R.drawable.bg_chip
-            )
-
-            findViewById<TextView>(R.id.archivedChip).setTextColor(
-                ContextCompat.getColor(
-                    this,
-                    if (showArchivedOnly) R.color.messages_text_primary
-                    else R.color.messages_text_secondary
-                )
-            )
-
-            if (showArchivedOnly) {
-                showUnreadOnly = false
-
-                findViewById<TextView>(R.id.unreadChip).setBackgroundResource(
-                    R.drawable.bg_chip
-                )
-
-                findViewById<TextView>(R.id.unreadChip).setTextColor(
-                    ContextCompat.getColor(
-                        this,
-                        R.color.messages_text_secondary
-                    )
-                )
-            }
-
-            loadConversations(searchInput.text.toString().trim())
-        }
-
         checkSmsAccess()
     }
 
     private var firstResume = true
     private var showUnreadOnly = false
-    private var showArchivedOnly = false
-
-    private val archivedThreads: MutableSet<String>
-        get() = getSharedPreferences("messages_settings", MODE_PRIVATE)
-            .getStringSet("archived_threads", emptySet())
-            ?.toMutableSet()
-            ?: mutableSetOf()
-
 
     override fun onResume() {
         super.onResume()
@@ -420,18 +378,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                val archived = archivedThreads
-
-                val archiveIterator = conversations.entries.iterator()
-                while (archiveIterator.hasNext()) {
-                    val entry = archiveIterator.next()
-                    val isArchived = archived.contains(entry.key)
-
-                    if (showArchivedOnly != isArchived) {
-                        archiveIterator.remove()
-                    }
-                }
-
                 if (showUnreadOnly) {
                     val iterator = conversations.entries.iterator()
                     while (iterator.hasNext()) {
@@ -476,28 +422,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
-    }
-
-    private fun toggleArchive(threadId: String) {
-        val prefs = getSharedPreferences("messages_settings", MODE_PRIVATE)
-        val archived = prefs.getStringSet(
-            "archived_threads",
-            emptySet()
-        )?.toMutableSet() ?: mutableSetOf()
-
-        val wasArchived = archived.contains(threadId)
-
-        if (wasArchived) {
-            archived.remove(threadId)
-        } else {
-            archived.add(threadId)
-        }
-
-        prefs.edit()
-            .putStringSet("archived_threads", archived)
-            .apply()
-
-        loadConversations(searchInput.text.toString().trim())
     }
 
     private fun addConversationView(conversation: Conversation) {
@@ -606,11 +530,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         row.addView(rightContainer)
-
-        row.setOnLongClickListener {
-            toggleArchive(conversation.threadId)
-            true
-        }
 
         row.setOnClickListener {
             val intent = Intent(this, ConversationActivity::class.java).apply {
