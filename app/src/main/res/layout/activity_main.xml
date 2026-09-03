@@ -11,8 +11,71 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
+        <!-- Selection toolbar -->
+        <LinearLayout
+            android:id="@+id/selectionToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/selectionClose"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:text="‹"
+                android:textColor="@color/messages_text_primary"
+                android:textSize="34sp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/selectionCount"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingStart="8dp"
+                android:text="1 selected"
+                android:textColor="@color/messages_text_primary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/selectionArchive"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Archive"
+                android:textColor="@color/messages_text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/selectionDelete"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Delete"
+                android:textColor="@color/messages_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true" />
+
+        </LinearLayout>
+
         <!-- Top app bar -->
         <LinearLayout
+            android:id="@+id/mainTopBar"
             android:layout_width="match_parent"
             android:layout_height="72dp"
             android:gravity="center_vertical"
@@ -49,6 +112,7 @@
 
         <!-- Greeting -->
         <TextView
+            android:id="@+id/greetingText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingStart="20dp"
@@ -95,6 +159,7 @@
 
         <!-- Filter chips -->
         <HorizontalScrollView
+            android:id="@+id/filterContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"

@@ -71,16 +71,81 @@
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="@color/messages_divider" />
+    <!-- Message selection toolbar -->
+    <LinearLayout
+        android:id="@+id/messageSelectionToolbar"
+        android:layout_width="match_parent"
+        android:layout_height="76dp"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/messageSelectionClose"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:text="‹"
+            android:textColor="@color/messages_text_primary"
+            android:textSize="34sp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/messageSelectionCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="8dp"
+            android:text="1 selected"
+            android:textColor="@color/messages_text_primary"
+            android:textSize="19sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/messageSelectionCopy"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Copy"
+            android:textColor="@color/messages_text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_selection_action"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/messageSelectionDelete"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Delete"
+            android:textColor="@color/messages_primary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_selection_action"
+            android:clickable="true"
+            android:focusable="true" />
+
+    </LinearLayout>
+
 
     <!-- Messages -->
     <ScrollView
         android:id="@+id/messageScroll"
-        android:layout_width="match_parent"
+                    android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:clipToPadding="false"
-        android:fillViewport="true"
-        android:overScrollMode="ifContentScrolls">
+        android:overScrollMode="ifContentScrolls"
+            android:fillViewport="true">
 
         <LinearLayout
             android:id="@+id/messageList"
@@ -96,6 +161,7 @@
 
     <!-- Composer -->
     <LinearLayout
+        android:id="@+id/composerContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"

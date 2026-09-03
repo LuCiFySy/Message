@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -76,7 +77,8 @@
 
         </service>
 
-        <activity android:name=".ConversationActivity" android:exported="false" />
+        <activity android:name=".ConversationActivity"
+            android:windowSoftInputMode="adjustResize" android:exported="false" />
     </application>
 
 </manifest>

@@ -63,9 +63,18 @@ class SmsReceiver : BroadcastReceiver() {
             )
 
             if (uri != null) {
+                val messageId = android.content.ContentUris.parseId(uri)
+
                 Log.d(
                     TAG,
-                    "SMS stored successfully: address=$address body=$body uri=$uri"
+                    "SMS stored successfully: address=$address body=$body uri=$uri id=$messageId"
+                )
+
+                NotificationHelper.showMessageNotification(
+                    context = context,
+                    messageId = messageId,
+                    address = address,
+                    body = body
                 )
             } else {
                 Log.e(TAG, "SMS provider returned null while inserting message")

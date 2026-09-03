@@ -37,11 +37,15 @@ class MainActivity : AppCompatActivity() {
         private const val SMS_PERMISSION_REQUEST = 100
         private const val CONTACTS_PERMISSION_REQUEST = 101
         private const val SMS_ROLE_REQUEST = 101
+        private const val NOTIFICATION_PERMISSION_REQUEST = 102
     }
 
     private lateinit var conversationList: LinearLayout
     private lateinit var emptyText: TextView
     private lateinit var searchInput: EditText
+
+    private var selectionMode = false
+    private val selectedThreadIds = LinkedHashSet<String>()
 
     private val contactNameCache = HashMap<String, String?>()
 
@@ -170,7 +174,11 @@ class MainActivity : AppCompatActivity() {
         if (isDefaultSmsApp()) {
             if (hasSmsPermission()) {
                 if (hasContactsPermission()) {
-                    loadConversations()
+                    if (hasNotificationPermission()) {
+                        loadConversations()
+                    } else {
+                        requestNotificationPermission()
+                    }
                 } else {
                     requestContactsPermission()
                 }
@@ -229,6 +237,27 @@ class MainActivity : AppCompatActivity() {
             this,
             Manifest.permission.READ_CONTACTS
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return true
+        }
+
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                NOTIFICATION_PERMISSION_REQUEST
+            )
+        }
     }
 
     private fun requestSmsPermission() {
@@ -296,6 +325,16 @@ class MainActivity : AppCompatActivity() {
 
         if (requestCode == CONTACTS_PERMISSION_REQUEST) {
             if (hasSmsPermission()) {
+                if (hasNotificationPermission()) {
+                    loadConversations()
+                } else {
+                    requestNotificationPermission()
+                }
+            }
+        }
+
+        if (requestCode == NOTIFICATION_PERMISSION_REQUEST) {
+            if (hasSmsPermission() && hasContactsPermission()) {
                 loadConversations()
             }
         }
@@ -484,8 +523,52 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun enterSelectionMode(threadId: String) {
-        // Multi-select UI will be implemented in the next step.
+        selectionMode = true
+        selectedThreadIds.clear()
+        selectedThreadIds.add(threadId)
+
+        findViewById<View>(R.id.mainTopBar).visibility = View.GONE
+        findViewById<View>(R.id.greetingText).visibility = View.GONE
+        findViewById<View>(R.id.searchContainer).visibility = View.GONE
+        findViewById<View>(R.id.filterContainer).visibility = View.GONE
+        findViewById<View>(R.id.selectionToolbar).visibility = View.VISIBLE
+
+        updateSelectionToolbar()
+        loadConversations(searchInput.text.toString().trim())
     }
+
+    private fun exitSelectionMode() {
+        selectionMode = false
+        selectedThreadIds.clear()
+
+        findViewById<View>(R.id.selectionToolbar).visibility = View.GONE
+        findViewById<View>(R.id.mainTopBar).visibility = View.VISIBLE
+        findViewById<View>(R.id.greetingText).visibility = View.VISIBLE
+        findViewById<View>(R.id.searchContainer).visibility = View.VISIBLE
+        findViewById<View>(R.id.filterContainer).visibility = View.VISIBLE
+
+        loadConversations(searchInput.text.toString().trim())
+    }
+
+    private fun updateSelectionToolbar() {
+        val count = selectedThreadIds.size
+
+        findViewById<TextView>(R.id.selectionCount).text =
+            "$count selected"
+
+        findViewById<TextView>(R.id.selectionClose).setOnClickListener {
+            exitSelectionMode()
+        }
+
+        findViewById<TextView>(R.id.selectionArchive).setOnClickListener {
+            archiveSelectedConversations()
+        }
+
+        findViewById<TextView>(R.id.selectionDelete).setOnClickListener {
+            deleteSelectedConversations()
+        }
+    }
+
 
     private fun showConversationMenu(
         anchor: View,
@@ -506,6 +589,17 @@ class MainActivity : AppCompatActivity() {
             elevation = dp(8).toFloat()
         }
 
+        val popup = PopupWindow(
+            container,
+            dp(220),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            elevation = dp(8).toFloat()
+            isOutsideTouchable = true
+        }
+
         fun addAction(
             title: String,
             action: () -> Unit
@@ -524,7 +618,9 @@ class MainActivity : AppCompatActivity() {
                 isClickable = true
                 isFocusable = true
                 minHeight = dp(52)
+
                 setOnClickListener {
+                    popup.dismiss()
                     action()
                 }
             }
@@ -546,7 +642,9 @@ class MainActivity : AppCompatActivity() {
             enterSelectionMode(conversation.threadId)
         }
 
-        addAction("Archive") {
+        addAction(
+            if (showArchivedOnly) "Unarchive" else "Archive"
+        ) {
             toggleArchive(conversation.threadId)
         }
 
@@ -558,18 +656,11 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        val popup = PopupWindow(
-            container,
-            dp(220),
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            true
-        ).apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            elevation = dp(8).toFloat()
-            isOutsideTouchable = true
-        }
-
-        popup.showAsDropDown(anchor, dp(12), -anchor.height + dp(8))
+        popup.showAsDropDown(
+            anchor,
+            dp(12),
+            -anchor.height + dp(8)
+        )
     }
 
     private fun deleteConversation(threadId: String) {
@@ -705,6 +796,158 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun archiveSelectedConversations() {
+        if (selectedThreadIds.isEmpty()) return
+
+        val prefs = getSharedPreferences("messages_settings", MODE_PRIVATE)
+        val archived = prefs.getStringSet(
+            "archived_threads",
+            emptySet()
+        )?.toMutableSet() ?: mutableSetOf()
+
+        archived.addAll(selectedThreadIds)
+
+        prefs.edit()
+            .putStringSet("archived_threads", archived)
+            .apply()
+
+        exitSelectionMode()
+    }
+
+    private fun deleteSelectedConversations() {
+        if (selectedThreadIds.isEmpty()) return
+
+        val count = selectedThreadIds.size
+
+        val dialogContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(24), dp(16), dp(12))
+            background = GradientDrawable().apply {
+                setColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.messages_surface
+                    )
+                )
+                cornerRadius = dp(24).toFloat()
+            }
+        }
+
+        val title = TextView(this).apply {
+            text = "Delete $count conversations?"
+            textSize = 22f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(
+                ContextCompat.getColor(
+                    this@MainActivity,
+                    R.color.messages_text_primary
+                )
+            )
+        }
+
+        val message = TextView(this).apply {
+            text = "All messages in the selected conversations will be deleted."
+            textSize = 15f
+            setTextColor(
+                ContextCompat.getColor(
+                    this@MainActivity,
+                    R.color.messages_text_secondary
+                )
+            )
+            setPadding(0, dp(10), 0, dp(16))
+        }
+
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+
+        val cancel = TextView(this).apply {
+            text = "CANCEL"
+            textSize = 14f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(
+                ContextCompat.getColor(
+                    this@MainActivity,
+                    R.color.messages_text_secondary
+                )
+            )
+            setPadding(dp(16), 0, dp(16), 0)
+            minHeight = dp(48)
+        }
+
+        val delete = TextView(this).apply {
+            text = "DELETE"
+            textSize = 14f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(
+                ContextCompat.getColor(
+                    this@MainActivity,
+                    R.color.messages_primary
+                )
+            )
+            setPadding(dp(16), 0, dp(16), 0)
+            minHeight = dp(48)
+        }
+
+        buttons.addView(cancel)
+        buttons.addView(delete)
+
+        dialogContainer.addView(title)
+        dialogContainer.addView(message)
+        dialogContainer.addView(
+            buttons,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+            )
+        )
+
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(dialogContainer)
+            .create()
+
+        cancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        delete.setOnClickListener {
+            dialog.dismiss()
+
+            val threads = selectedThreadIds.toList()
+
+            Thread {
+                threads.forEach { threadId ->
+                    try {
+                        contentResolver.delete(
+                            Telephony.Sms.CONTENT_URI,
+                            "${Telephony.Sms.THREAD_ID}=?",
+                            arrayOf(threadId)
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
+
+                runOnUiThread {
+                    exitSelectionMode()
+                }
+            }.start()
+        }
+
+        dialog.show()
+
+        dialog.window?.setBackgroundDrawable(
+            ColorDrawable(Color.TRANSPARENT)
+        )
+
+        dialog.window?.setLayout(
+            dp(340),
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+    }
+
     private fun toggleArchive(threadId: String) {
         val prefs = getSharedPreferences("messages_settings", MODE_PRIVATE)
         val archived = prefs.getStringSet(
@@ -741,7 +984,11 @@ class MainActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
             background =
-                getDrawable(android.R.drawable.list_selector_background)
+                if (selectionMode && selectedThreadIds.contains(conversation.threadId)) {
+                    getDrawable(R.drawable.bg_conversation_selected)
+                } else {
+                    null
+                }
         }
 
         val avatar = TextView(this).apply {
@@ -840,11 +1087,26 @@ class MainActivity : AppCompatActivity() {
         }
 
         row.setOnClickListener {
-            val intent = Intent(this, ConversationActivity::class.java).apply {
-                putExtra("thread_id", conversation.threadId)
-                putExtra("address", conversation.address)
+            if (selectionMode) {
+                if (selectedThreadIds.contains(conversation.threadId)) {
+                    selectedThreadIds.remove(conversation.threadId)
+                } else {
+                    selectedThreadIds.add(conversation.threadId)
+                }
+
+                if (selectedThreadIds.isEmpty()) {
+                    exitSelectionMode()
+                } else {
+                    updateSelectionToolbar()
+                    loadConversations(searchInput.text.toString().trim())
+                }
+            } else {
+                val intent = Intent(this, ConversationActivity::class.java).apply {
+                    putExtra("thread_id", conversation.threadId)
+                    putExtra("address", conversation.address)
+                }
+                startActivity(intent)
             }
-            startActivity(intent)
         }
 
         conversationList.addView(
@@ -852,7 +1114,10 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            ).apply {
+                topMargin = dp(2)
+                bottomMargin = dp(2)
+            }
         )
     }
 

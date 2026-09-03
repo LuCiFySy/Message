@@ -13,5 +13,6 @@
     <color name="messages_text_hint">#938F99</color>
 
     <color name="messages_divider">#49454F</color>
+    <color name="messages_selection_background">#332F3B</color>
 
 </resources>

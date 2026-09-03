@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.ContactsContract
 import android.os.Build
 import androidx.core.app.NotificationCompat
 
@@ -33,6 +35,52 @@ object NotificationHelper {
             )
 
             manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun getContactName(
+        context: Context,
+        phoneNumber: String
+    ): String {
+        return try {
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(phoneNumber)
+            )
+
+            val projection = arrayOf(
+                ContactsContract.PhoneLookup.DISPLAY_NAME
+            )
+
+            context.contentResolver.query(
+                uri,
+                projection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(
+                        ContactsContract.PhoneLookup.DISPLAY_NAME
+                    )
+
+                    if (nameIndex >= 0) {
+                        val name = cursor.getString(nameIndex)
+
+                        if (!name.isNullOrBlank()) {
+                            return name
+                        }
+                    }
+                }
+            }
+
+            phoneNumber
+
+        } catch (_: SecurityException) {
+            phoneNumber
+        } catch (_: Exception) {
+            phoneNumber
         }
     }
 
@@ -98,7 +146,7 @@ object NotificationHelper {
             CHANNEL_ID
         )
             .setSmallIcon(android.R.drawable.ic_dialog_email)
-            .setContentTitle(address)
+            .setContentTitle(getContactName(context, address))
             .setContentText(body)
             .setStyle(
                 NotificationCompat.BigTextStyle()
