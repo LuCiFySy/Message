@@ -159,35 +159,85 @@
 
     </ScrollView>
 
+    <!-- Selected attachments -->
+    <HorizontalScrollView
+        android:id="@+id/attachmentPreviewScroll"
+        android:layout_width="match_parent"
+        android:layout_height="92dp"
+        android:background="@color/messages_background"
+        android:paddingStart="12dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/attachmentPreview"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal" />
+
+    </HorizontalScrollView>
+
     <!-- Composer -->
     <LinearLayout
         android:id="@+id/composerContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:paddingStart="12dp"
+        android:background="@color/messages_background"
+        android:elevation="8dp"
+        android:paddingStart="8dp"
         android:paddingTop="8dp"
         android:paddingEnd="12dp"
         android:paddingBottom="8dp">
 
-        <EditText
-            android:id="@+id/messageInput"
+        <ImageButton
+            android:id="@+id/attachmentButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Attach"
+            android:padding="12dp"
+            android:src="@drawable/ic_attachment"
+            android:tint="@color/messages_text_secondary" />
+
+        <FrameLayout
             android:layout_width="0dp"
             android:layout_height="52dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_message_input"
-            android:hint="Message"
-            android:imeOptions="actionSend"
-            android:inputType="textCapSentences|textMultiLine"
-            android:maxLines="4"
-            android:paddingStart="18dp"
-            android:paddingEnd="18dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
-            android:singleLine="false"
-            android:textColor="@color/messages_text_primary"
-            android:textColorHint="@color/messages_text_hint"
-            android:textSize="16sp" />
+            android:layout_weight="1">
+
+            <EditText
+                android:id="@+id/messageInput"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_message_input"
+                android:hint="Message"
+                android:imeOptions="actionSend"
+                android:inputType="textCapSentences|textMultiLine"
+                android:maxLines="4"
+                android:paddingStart="18dp"
+                android:paddingEnd="58dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:singleLine="false"
+                android:textColor="@color/messages_text_primary"
+                android:textColorHint="@color/messages_text_hint"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/characterCounter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|end"
+                android:layout_marginEnd="14dp"
+                android:layout_marginBottom="7dp"
+                android:textColor="@color/messages_text_secondary"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
+        </FrameLayout>
 
         <ImageButton
             android:id="@+id/sendButton"

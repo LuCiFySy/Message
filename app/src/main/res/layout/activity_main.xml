@@ -101,12 +101,13 @@
                 android:src="@android:drawable/ic_menu_search" />
 
             <ImageButton
+                android:id="@+id/moreButton"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="More options"
+                android:contentDescription="Menu"
                 android:padding="12dp"
-                android:src="@android:drawable/ic_menu_more" />
+                android:src="@android:drawable/ic_menu_sort_by_size" />
 
         </LinearLayout>
 

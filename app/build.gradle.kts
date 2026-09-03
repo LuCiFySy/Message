@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.saurabh.messages"
-        minSdk = 23
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -26,6 +26,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":mmslib"))
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
 }

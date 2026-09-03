@@ -9,16 +9,28 @@ import android.net.Uri
 import android.provider.ContactsContract
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.RemoteInput
+import java.util.Locale
 
 object NotificationHelper {
 
     private const val CHANNEL_ID = "incoming_messages"
+
+    const val ACTION_REPLY =
+        "com.saurabh.messages.ACTION_REPLY"
+
+    const val REPLY_KEY =
+        "com.saurabh.messages.REPLY_KEY"
 
     const val ACTION_MARK_READ =
         "com.saurabh.messages.ACTION_MARK_READ"
 
     const val ACTION_DELETE =
         "com.saurabh.messages.ACTION_DELETE"
+
+    const val ACTION_COPY_OTP =
+        "com.saurabh.messages.ACTION_COPY_OTP"
+
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -84,6 +96,29 @@ object NotificationHelper {
         }
     }
 
+    private fun extractOtp(body: String): String? {
+        val lower = body.lowercase(Locale.ROOT)
+
+        val hasOtpContext = listOf(
+            "otp",
+            "one-time password",
+            "one time password",
+            "verification code",
+            "verification",
+            "security code",
+            "passcode",
+            "login code"
+        ).any { lower.contains(it) }
+
+        if (!hasOtpContext) {
+            return null
+        }
+
+        return Regex("""(?<!\d)\d{4,8}(?!\d)""")
+            .find(body)
+            ?.value
+    }
+
     fun showMessageNotification(
         context: Context,
         messageId: Long,
@@ -107,6 +142,29 @@ object NotificationHelper {
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
                 PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val replyIntent = Intent(
+            context,
+            NotificationActionReceiver::class.java
+        ).apply {
+            action = NotificationHelper.ACTION_REPLY
+            putExtra("message_id", messageId)
+            putExtra("address", address)
+        }
+
+        val replyRemoteInput = RemoteInput.Builder(
+            REPLY_KEY
+        )
+            .setLabel("Reply")
+            .build()
+
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            (messageId + 300000).toInt(),
+            replyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                PendingIntent.FLAG_MUTABLE
         )
 
         val deleteIntent = Intent(
@@ -141,7 +199,27 @@ object NotificationHelper {
                 PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(
+        val otp = extractOtp(body)
+
+        val copyOtpPendingIntent = otp?.let {
+            val copyIntent = Intent(
+                context,
+                OtpCopyReceiver::class.java
+            ).apply {
+                action = ACTION_COPY_OTP
+                putExtra("otp", it)
+            }
+
+            PendingIntent.getBroadcast(
+                context,
+                (messageId + 400000).toInt(),
+                copyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or
+                PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        val notificationBuilder = NotificationCompat.Builder(
             context,
             CHANNEL_ID
         )
@@ -161,17 +239,45 @@ object NotificationHelper {
             .setContentIntent(openPendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .addAction(
+
+        if (otp != null && copyOtpPendingIntent != null) {
+            notificationBuilder.addAction(
+                android.R.drawable.ic_menu_save,
+                "Copy OTP",
+                copyOtpPendingIntent
+            )
+
+            notificationBuilder.addAction(
                 android.R.drawable.ic_menu_delete,
                 "Delete",
                 deletePendingIntent
             )
-            .addAction(
+        } else {
+            notificationBuilder.addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_send,
+                    "Reply",
+                    replyPendingIntent
+                )
+                    .addRemoteInput(replyRemoteInput)
+                    .setAllowGeneratedReplies(true)
+                    .build()
+            )
+
+            notificationBuilder.addAction(
                 android.R.drawable.ic_menu_view,
                 "Mark as read",
                 markReadPendingIntent
             )
-            .build()
+
+            notificationBuilder.addAction(
+                android.R.drawable.ic_menu_delete,
+                "Delete",
+                deletePendingIntent
+            )
+        }
+
+        val notification = notificationBuilder.build()
 
         val manager = context.getSystemService(
             NotificationManager::class.java

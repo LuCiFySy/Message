@@ -1,11 +1,19 @@
 package com.saurabh.messages
+import android.text.TextWatcher
+import android.text.Editable
 import android.graphics.Typeface
+import android.widget.ImageView
+import android.widget.FrameLayout
+import android.view.ViewGroup.LayoutParams
+import android.graphics.BitmapFactory
 import android.view.ViewGroup
 import android.graphics.Color
 import android.provider.Telephony
 import android.provider.ContactsContract
 import android.Manifest
 import android.content.ContentValues
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
@@ -13,8 +21,8 @@ import android.graphics.drawable.GradientDrawable
 import android.telephony.SmsManager
 import android.view.Gravity
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -29,6 +37,8 @@ class ConversationActivity : AppCompatActivity() {
 
     companion object {
         private const val SEND_SMS_REQUEST = 200
+        const val ACTION_MESSAGES_CHANGED =
+            "com.saurabh.messages.ACTION_MESSAGES_CHANGED"
     }
 
     private var threadId: String = ""
@@ -36,10 +46,38 @@ class ConversationActivity : AppCompatActivity() {
 
     private lateinit var messageList: LinearLayout
     private lateinit var messageInput: EditText
+    private lateinit var attachmentPreview: LinearLayout
+    private lateinit var attachmentPreviewScroll: View
+
+    private val selectedAttachments = mutableListOf<Uri>()
+
+    private val attachmentPicker =
+        registerForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+        ) { uris ->
+
+            if (uris.isEmpty()) return@registerForActivityResult
+
+            selectedAttachments.clear()
+            selectedAttachments.addAll(uris)
+
+            showAttachmentPreviews()
+        }
 
     private var selectionMode = false
     private val selectedMessageIds = LinkedHashSet<Long>()
     private val selectedMessageBodies = LinkedHashMap<Long, String>()
+
+    private val messagesChangedReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+            if (intent.action != ACTION_MESSAGES_CHANGED) return
+
+            val changedThreadId = intent.getLongExtra("thread_id", -1L).toString()
+            if (changedThreadId == threadId) {
+                loadMessages()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,9 +123,58 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
 
         messageList = findViewById(R.id.messageList)
         messageInput = findViewById(R.id.messageInput)
+        attachmentPreview = findViewById(R.id.attachmentPreview)
+        attachmentPreviewScroll = findViewById(R.id.attachmentPreviewScroll)
+
+        val characterCounter = findViewById<TextView>(R.id.characterCounter)
+
+        messageInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(
+                s: CharSequence?,
+                start: Int,
+                count: Int,
+                after: Int
+            ) = Unit
+
+            override fun onTextChanged(
+                s: CharSequence?,
+                start: Int,
+                before: Int,
+                count: Int
+            ) {
+                val text = s?.toString() ?: ""
+
+                if (text.isEmpty()) {
+                    characterCounter.visibility = View.GONE
+                    return
+                }
+
+                val isGsm7 = text.all { char ->
+                    char.code in 0x20..0x7E ||
+                        char == '\n' ||
+                        char == '\r' ||
+                        char == '\t' ||
+                        char in "\u00A3\u20AC\u00A5\u00E8\u00E9\u00F9\u00EC\u00F2\u00C7\u00D8\u00F8\u00C5\u00E6\u0394\u03A6\u0393\u039B\u03A9\u03A0\u03A8\u03A3\u0398\u039E\u00C6\u00DF\u00C9\u00A4"
+                }
+
+                val limit = if (isGsm7) 160 else 70
+                val length = text.length
+
+                characterCounter.text = "$length / $limit"
+                characterCounter.visibility = View.VISIBLE
+            }
+
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
 
         findViewById<View>(R.id.backButton).setOnClickListener {
             finish()
+        }
+
+        findViewById<View>(R.id.attachmentButton).setOnClickListener {
+            attachmentPicker.launch(
+                arrayOf("*/*")
+            )
         }
 
         findViewById<View>(R.id.sendButton).setOnClickListener {
@@ -96,6 +183,32 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
 
         markConversationRead()
         loadMessages()
+    }
+
+    override fun onStart() {
+        super.onStart()
+
+        getSharedPreferences("messages_settings", MODE_PRIVATE)
+            .edit()
+            .putString("active_thread_id", threadId)
+            .apply()
+
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            messagesChangedReceiver,
+            android.content.IntentFilter(ACTION_MESSAGES_CHANGED),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+    }
+
+    override fun onStop() {
+        getSharedPreferences("messages_settings", MODE_PRIVATE)
+            .edit()
+            .remove("active_thread_id")
+            .apply()
+
+        unregisterReceiver(messagesChangedReceiver)
+        super.onStop()
     }
 
     override fun onResume() {
@@ -116,7 +229,8 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             Telephony.Sms.ADDRESS,
             Telephony.Sms.BODY,
             Telephony.Sms.DATE,
-            Telephony.Sms.TYPE
+            Telephony.Sms.TYPE,
+            Telephony.TextBasedSmsColumns.STATUS
         )
 
         try {
@@ -125,7 +239,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                 projection,
                 "${Telephony.Sms.THREAD_ID}=?",
                 arrayOf(threadId),
-                "${Telephony.Sms.DATE} ASC"
+                "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC"
             )?.use { cursor ->
 
                 val addressIndex =
@@ -136,6 +250,8 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                     cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
                 val typeIndex =
                     cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
+                val statusIndex =
+                    cursor.getColumnIndexOrThrow(Telephony.TextBasedSmsColumns.STATUS)
 
                 while (cursor.moveToNext()) {
                     val messageId = cursor.getLong(
@@ -144,6 +260,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                     val body = cursor.getString(bodyIndex) ?: ""
                     val date = cursor.getLong(dateIndex)
                     val type = cursor.getInt(typeIndex)
+                    val status = cursor.getInt(statusIndex)
                     val messageAddress =
                         cursor.getString(addressIndex) ?: address
 
@@ -152,6 +269,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                         body = body,
                         date = date,
                         type = type,
+                        status = status,
                         messageAddress = messageAddress
                     )
                 }
@@ -178,6 +296,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         body: String,
         date: Long,
         type: Int,
+        status: Int,
         messageAddress: String
     ) {
         val outgoing =
@@ -296,7 +415,14 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
 
         val time = TextView(this).apply {
-            text = formatMessageTime(date)
+            val statusText = when {
+                !outgoing -> ""
+                status == Telephony.TextBasedSmsColumns.STATUS_COMPLETE -> "✓✓ "
+                status == Telephony.TextBasedSmsColumns.STATUS_FAILED -> "! "
+                else -> "✓ "
+            }
+
+            text = statusText + formatMessageTime(date)
             textSize = 10.5f
             setTextColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_text_hint))
             setPadding(
@@ -536,10 +662,98 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         )
     }
 
+    private fun showAttachmentPreviews() {
+        attachmentPreview.removeAllViews()
+
+        if (selectedAttachments.isEmpty()) {
+            attachmentPreviewScroll.visibility = View.GONE
+            return
+        }
+
+        attachmentPreviewScroll.visibility = View.VISIBLE
+
+        selectedAttachments.forEachIndexed { index, uri ->
+
+            val frame = FrameLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    dp(76),
+                    dp(76)
+                ).apply {
+                    marginEnd = dp(8)
+                }
+            }
+
+            val image = RoundedImageView(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    dp(76),
+                    dp(76)
+                )
+
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = null
+                clipToOutline = false
+            }
+
+            val mimeType = contentResolver.getType(uri) ?: ""
+
+            if (mimeType.startsWith("image/")) {
+                try {
+                    image.setImageURI(uri)
+                } catch (_: Exception) {
+                    image.setImageResource(android.R.drawable.ic_menu_gallery)
+                }
+            } else {
+                image.setImageResource(android.R.drawable.ic_menu_save)
+                image.scaleType = ImageView.ScaleType.CENTER
+                image.setPadding(
+                    dp(18),
+                    dp(18),
+                    dp(18),
+                    dp(18)
+                )
+            }
+
+            frame.addView(image)
+
+            val remove = TextView(this).apply {
+                text = "×"
+                textSize = 17f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.BLACK)
+                }
+
+                layoutParams = FrameLayout.LayoutParams(
+                    dp(24),
+                    dp(24),
+                    Gravity.TOP or Gravity.END
+                ).apply {
+                    topMargin = dp(2)
+                    rightMargin = dp(2)
+                }
+
+                elevation = dp(2).toFloat()
+
+                setOnClickListener {
+                    selectedAttachments.removeAt(index)
+                    showAttachmentPreviews()
+                }
+            }
+
+            frame.addView(remove)
+            attachmentPreview.addView(frame)
+        }
+    }
+
     private fun sendMessage() {
         val body = messageInput.text.toString().trim()
 
-        if (body.isEmpty()) return
+        if (body.isEmpty() && selectedAttachments.isEmpty()) {
+            return
+        }
 
         if (address.isBlank() || address == "Unknown") {
             Toast.makeText(
@@ -564,34 +778,123 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             return
         }
 
+        if (selectedAttachments.isNotEmpty()) {
+            try {
+                val settings = com.klinker.android.send_message.Settings()
+                settings.setUseSystemSending(true)
+
+                val transaction = com.klinker.android.send_message.Transaction(
+                    this,
+                    settings
+                )
+
+                val message = com.klinker.android.send_message.Message(
+                    body,
+                    address
+                )
+
+                for (uri in selectedAttachments) {
+                    val mimeType =
+                        contentResolver.getType(uri) ?: "application/octet-stream"
+
+                    val bytes = contentResolver.openInputStream(uri)?.use {
+                        it.readBytes()
+                    } ?: continue
+
+                    val fileName = uri.lastPathSegment
+                        ?.substringAfterLast('/')
+                        ?: "attachment"
+
+                    message.addMedia(
+                        bytes,
+                        mimeType,
+                        fileName
+                    )
+                }
+
+                transaction.setExplicitBroadcastForSentMms(
+                    Intent(this, MmsSentReceiver::class.java)
+                )
+
+                transaction.sendNewMessage(message)
+
+                messageInput.text.clear()
+                selectedAttachments.clear()
+                showAttachmentPreviews()
+                loadMessages()
+                return
+
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this,
+                    "Failed to send MMS: ${e.message ?: "Unknown error"}",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
+        }
+
         try {
             val smsManager = SmsManager.getDefault()
-
-            smsManager.sendTextMessage(
-                address,
-                null,
-                body,
-                null,
-                null
-            )
 
             val values = ContentValues().apply {
                 put(Telephony.Sms.ADDRESS, address)
                 put(Telephony.Sms.BODY, body)
                 put(Telephony.Sms.DATE, System.currentTimeMillis())
                 put(Telephony.Sms.READ, 1)
-                put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT)
+                put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_OUTBOX)
                 put(Telephony.Sms.THREAD_ID, threadId)
+                put(Telephony.TextBasedSmsColumns.STATUS, Telephony.TextBasedSmsColumns.STATUS_PENDING)
             }
 
-            try {
-                contentResolver.insert(
-                    Telephony.Sms.Sent.CONTENT_URI,
-                    values
-                )
-            } catch (_: Exception) {
-                // Sending already succeeded.
+            val messageUri = contentResolver.insert(
+                Telephony.Sms.Sent.CONTENT_URI,
+                values
+            )
+
+            val messageId = messageUri?.lastPathSegment?.toLongOrNull() ?: -1L
+            val requestCode = (System.currentTimeMillis() and 0x7fffffff).toInt()
+
+            val sentIntent = Intent(this, SmsStatusReceiver::class.java).apply {
+                action = SmsStatusReceiver.ACTION_SMS_SENT
+                putExtra("message_id", messageId)
             }
+
+            val deliveryIntent = Intent(this, SmsStatusReceiver::class.java).apply {
+                action = SmsStatusReceiver.ACTION_SMS_DELIVERED
+                putExtra("message_id", messageId)
+            }
+
+            val sentPendingIntent = android.app.PendingIntent.getBroadcast(
+                this,
+                requestCode,
+                sentIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                    android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val deliveryPendingIntent = if (
+                getSharedPreferences("messages_settings", MODE_PRIVATE)
+                    .getBoolean("delivery_reports", true)
+            ) {
+                android.app.PendingIntent.getBroadcast(
+                    this,
+                    requestCode + 1,
+                    deliveryIntent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                        android.app.PendingIntent.FLAG_IMMUTABLE
+                )
+            } else {
+                null
+            }
+
+            smsManager.sendTextMessage(
+                address,
+                null,
+                body,
+                sentPendingIntent,
+                deliveryPendingIntent
+            )
 
             messageInput.text.clear()
             loadMessages()

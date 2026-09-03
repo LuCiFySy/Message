@@ -13,6 +13,8 @@ import android.os.Bundle
 import android.provider.Telephony
 import android.provider.ContactsContract
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.View
 import android.widget.PopupWindow
 import android.view.ViewGroup
@@ -38,6 +40,7 @@ class MainActivity : AppCompatActivity() {
         private const val CONTACTS_PERMISSION_REQUEST = 101
         private const val SMS_ROLE_REQUEST = 101
         private const val NOTIFICATION_PERMISSION_REQUEST = 102
+        private const val PICK_CONTACT_REQUEST = 103
     }
 
     private lateinit var conversationList: LinearLayout
@@ -67,6 +70,20 @@ class MainActivity : AppCompatActivity() {
         emptyText = findViewById(R.id.emptyText)
 
         searchInput = findViewById(R.id.searchInput)
+
+        findViewById<View>(R.id.moreButton).setOnClickListener {
+            startActivity(
+                Intent(this, SettingsActivity::class.java)
+            )
+        }
+
+        findViewById<TextView>(R.id.startChatButton).setOnClickListener {
+            val intent = Intent(
+                Intent.ACTION_PICK,
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+            )
+            startActivityForResult(intent, PICK_CONTACT_REQUEST)
+        }
 
         searchInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
@@ -288,6 +305,48 @@ class MainActivity : AppCompatActivity() {
 
         if (requestCode == SMS_ROLE_REQUEST) {
             checkSmsAccess()
+            return
+        }
+
+        if (
+            requestCode == PICK_CONTACT_REQUEST &&
+            resultCode == RESULT_OK &&
+            data?.data != null
+        ) {
+            val contactUri = data.data!!
+
+            contentResolver.query(
+                contactUri,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val numberIndex = cursor.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    )
+
+                    if (numberIndex >= 0) {
+                        val address = cursor.getString(numberIndex)?.trim()
+
+                        if (!address.isNullOrBlank()) {
+                            val threadId =
+                                Telephony.Threads.getOrCreateThreadId(this, address)
+
+                            val intent = Intent(
+                                this,
+                                ConversationActivity::class.java
+                            ).apply {
+                                putExtra("thread_id", threadId.toString())
+                                putExtra("address", address)
+                            }
+
+                            startActivity(intent)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -560,8 +619,12 @@ class MainActivity : AppCompatActivity() {
             exitSelectionMode()
         }
 
-        findViewById<TextView>(R.id.selectionArchive).setOnClickListener {
-            archiveSelectedConversations()
+        findViewById<TextView>(R.id.selectionArchive).apply {
+            text = if (showArchivedOnly) "Unarchive" else "Archive"
+
+            setOnClickListener {
+                archiveSelectedConversations()
+            }
         }
 
         findViewById<TextView>(R.id.selectionDelete).setOnClickListener {
@@ -805,7 +868,11 @@ class MainActivity : AppCompatActivity() {
             emptySet()
         )?.toMutableSet() ?: mutableSetOf()
 
-        archived.addAll(selectedThreadIds)
+        if (showArchivedOnly) {
+            archived.removeAll(selectedThreadIds)
+        } else {
+            archived.addAll(selectedThreadIds)
+        }
 
         prefs.edit()
             .putStringSet("archived_threads", archived)
@@ -970,6 +1037,120 @@ class MainActivity : AppCompatActivity() {
         loadConversations(searchInput.text.toString().trim())
     }
 
+    private fun setupConversationSwipe(
+        row: View,
+        conversation: Conversation
+    ) {
+        val prefs = getSharedPreferences("messages_settings", MODE_PRIVATE)
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val swipeDistance = dp(120)
+
+        var downX = 0f
+        var downY = 0f
+        var swiping = false
+        var cancelledClick = false
+
+        row.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    downY = event.rawY
+                    swiping = false
+                    cancelledClick = false
+
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+
+                    false
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downX
+                    val dy = event.rawY - downY
+
+                    if (!swiping &&
+                        (kotlin.math.abs(dx) > touchSlop ||
+                         kotlin.math.abs(dy) > touchSlop)
+                    ) {
+                        if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+                            swiping = true
+                            cancelledClick = true
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                        } else {
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            return@setOnTouchListener false
+                        }
+                    }
+
+                    if (swiping) {
+                        val limitedDx = dx.coerceIn(
+                            -view.width.toFloat(),
+                            view.width.toFloat()
+                        )
+                        view.translationX = limitedDx
+                        true
+                    } else {
+                        false
+                    }
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    if (swiping) {
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
+
+                        val dx = event.rawX - downX
+
+                        view.animate()
+                            .translationX(0f)
+                            .setDuration(180)
+                            .start()
+
+                        if (kotlin.math.abs(dx) >= swipeDistance) {
+                            val action = if (dx < 0) {
+                                prefs.getString(
+                                    SettingsActivity.PREF_SWIPE_LEFT,
+                                    SettingsActivity.SWIPE_ACTION_ARCHIVE
+                                ) ?: SettingsActivity.SWIPE_ACTION_ARCHIVE
+                            } else {
+                                prefs.getString(
+                                    SettingsActivity.PREF_SWIPE_RIGHT,
+                                    SettingsActivity.SWIPE_ACTION_DELETE
+                                ) ?: SettingsActivity.SWIPE_ACTION_DELETE
+                            }
+
+                            if (action == SettingsActivity.SWIPE_ACTION_DELETE) {
+                                deleteConversation(conversation.threadId)
+                            } else {
+                                toggleArchive(conversation.threadId)
+                            }
+                        }
+
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        true
+                    } else {
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        false
+                    }
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    if (swiping) {
+                        view.animate()
+                            .translationX(0f)
+                            .setDuration(180)
+                            .start()
+                    }
+
+                    swiping = false
+                    cancelledClick = false
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    false
+                }
+
+                else -> false
+            }
+        }
+    }
+
     private fun addConversationView(conversation: Conversation) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1085,6 +1266,8 @@ class MainActivity : AppCompatActivity() {
             showConversationMenu(row, conversation)
             true
         }
+
+        setupConversationSwipe(row, conversation)
 
         row.setOnClickListener {
             if (selectionMode) {

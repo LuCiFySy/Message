@@ -39,7 +39,7 @@ class SmsReceiver : BroadcastReceiver() {
             return
         }
 
-        val date = messages.minOfOrNull { it.timestampMillis }
+        val date = System.currentTimeMillis()
             ?: System.currentTimeMillis()
 
         try {
@@ -70,11 +70,24 @@ class SmsReceiver : BroadcastReceiver() {
                     "SMS stored successfully: address=$address body=$body uri=$uri id=$messageId"
                 )
 
-                NotificationHelper.showMessageNotification(
-                    context = context,
-                    messageId = messageId,
-                    address = address,
-                    body = body
+                val activeThreadId = context
+                    .getSharedPreferences("messages_settings", Context.MODE_PRIVATE)
+                    .getString("active_thread_id", null)
+
+                if (activeThreadId != threadId.toString()) {
+                    NotificationHelper.showMessageNotification(
+                        context = context,
+                        messageId = messageId,
+                        address = address,
+                        body = body
+                    )
+                }
+
+                context.sendBroadcast(
+                    Intent(ConversationActivity.ACTION_MESSAGES_CHANGED).apply {
+                        setPackage(context.packageName)
+                        putExtra("thread_id", threadId)
+                    }
                 )
             } else {
                 Log.e(TAG, "SMS provider returned null while inserting message")

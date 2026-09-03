@@ -51,6 +51,7 @@
         </receiver>
 
         <!-- Receive incoming MMS -->
+        <receiver android:name=".MmsSentReceiver" android:exported="false" />
         <receiver
             android:name=".MmsReceiver"
             android:exported="true"
@@ -62,6 +63,13 @@
             </intent-filter>
 
         </receiver>
+
+        <receiver android:name=".SmsStatusReceiver" android:exported="false" />
+
+        <!-- Notification actions -->
+        <receiver
+            android:name=".NotificationActionReceiver"
+            android:exported="false" />
 
         <!-- Reply from the notification / telecom UI -->
         <service
@@ -81,6 +89,14 @@
 
         <activity android:name=".ConversationActivity"
             android:windowSoftInputMode="adjustResize" android:exported="false" />
-    </application>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+        <receiver
+        android:name=".OtpCopyReceiver"
+        android:exported="false" />
+
+</application>
 
 </manifest>
