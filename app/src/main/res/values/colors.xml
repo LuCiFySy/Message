@@ -15,4 +15,6 @@
     <color name="messages_divider">#E4E0E7</color>
     <color name="messages_selection_background">#E8DEF8</color>
 
+    <color name="ic_launcher_background">#FFFFFF</color>
+
 </resources>
