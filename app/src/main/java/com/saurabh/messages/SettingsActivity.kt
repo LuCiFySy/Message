@@ -1,10 +1,17 @@
 package com.saurabh.messages
 
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.view.Gravity
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -28,7 +35,6 @@ class SettingsActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(20), 0, dp(20))
             setBackgroundColor(
                 ContextCompat.getColor(
                     this@SettingsActivity,
@@ -37,37 +43,54 @@ class SettingsActivity : AppCompatActivity() {
             )
         }
 
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(
+                0,
+                systemBars.top,
+                0,
+                systemBars.bottom
+            )
+            insets
+        }
+
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(16), 0)
         }
 
-        val back = android.widget.ImageButton(this).apply {
-            setImageResource(R.drawable.ic_arrow_back)
-            contentDescription = "Back"
-            background = null
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { finish() }
-        }
-
-        val title = TextView(this).apply {
-            text = "Settings"
-            textSize = 28f
+        val back = TextView(this).apply {
+            text = "‹"
+            textSize = 38f
+            gravity = Gravity.CENTER
             setTextColor(
                 ContextCompat.getColor(
                     this@SettingsActivity,
                     R.color.messages_text_primary
                 )
             )
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setOnClickListener {
+                finish()
+            }
         }
 
         topBar.addView(
             back,
-            LinearLayout.LayoutParams(dp(56), dp(56))
+            LinearLayout.LayoutParams(dp(48), dp(56))
         )
+
+        val title = TextView(this).apply {
+            text = "Settings"
+            textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(
+                ContextCompat.getColor(
+                    this@SettingsActivity,
+                    R.color.messages_text_primary
+                )
+            )
+        }
 
         topBar.addView(
             title,
@@ -78,8 +101,43 @@ class SettingsActivity : AppCompatActivity() {
             )
         )
 
-        root.addView(topBar)
+        root.addView(
+            topBar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(56)
+            )
+        )
 
+        // Scrollable settings content
+        val scrollView = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(24))
+        }
+
+        scrollView.addView(
+            content,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        root.addView(
+            scrollView,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        // Messages section
         val messagesSection = TextView(this).apply {
             text = "Messages"
             textSize = 14f
@@ -92,19 +150,20 @@ class SettingsActivity : AppCompatActivity() {
             )
         }
 
-        root.addView(messagesSection)
+        content.addView(messagesSection)
 
         addSwitchRow(
-            root = root,
-            title = "Delivery reports",
-            summary = "Show when SMS messages are delivered",
-            checked = prefs.getBoolean("delivery_reports", true)
+            content,
+            "Delivery reports",
+            "Show delivery reports for sent messages",
+            prefs.getBoolean("delivery_reports", false)
         ) { enabled ->
             prefs.edit()
                 .putBoolean("delivery_reports", enabled)
                 .apply()
         }
 
+        // Swipe actions section
         val swipeSection = TextView(this).apply {
             text = "Swipe actions"
             textSize = 14f
@@ -117,69 +176,65 @@ class SettingsActivity : AppCompatActivity() {
             )
         }
 
-        root.addView(swipeSection)
+        content.addView(swipeSection)
 
         addActionRow(
-            root = root,
-            title = "Swipe left",
-            summary = "Choose what happens when you swipe a conversation left",
-            preferenceKey = PREF_SWIPE_LEFT,
-            defaultAction = SWIPE_ACTION_ARCHIVE
-        )
-
-        addActionRow(
-            root = root,
-            title = "Swipe right",
-            summary = "Choose what happens when you swipe a conversation right",
-            preferenceKey = PREF_SWIPE_RIGHT,
-            defaultAction = SWIPE_ACTION_DELETE
-        )
-
-        setContentView(root)
-
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val systemBars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars()
-            )
-
-            view.setPadding(
-                0,
-                dp(20) + systemBars.top,
-                0,
-                dp(20) + systemBars.bottom
-            )
-
-            insets
+            content,
+            "Swipe left",
+            prefs.getString(PREF_SWIPE_LEFT, SWIPE_ACTION_DELETE)
+                ?: SWIPE_ACTION_DELETE
+        ) {
+            showSwipeActionDialog(true)
         }
 
-        ViewCompat.requestApplyInsets(root)
+        addActionRow(
+            content,
+            "Swipe right",
+            prefs.getString(PREF_SWIPE_RIGHT, SWIPE_ACTION_ARCHIVE)
+                ?: SWIPE_ACTION_ARCHIVE
+        ) {
+            showSwipeActionDialog(false)
+        }
+
+        // Privacy section
+        val privacySection = TextView(this).apply {
+            text = "Privacy"
+            textSize = 14f
+            setPadding(dp(20), dp(28), dp(20), dp(10))
+            setTextColor(
+                ContextCompat.getColor(
+                    this@SettingsActivity,
+                    R.color.messages_text_secondary
+                )
+            )
+        }
+
+        content.addView(privacySection)
+
+        addBlockedContactsRow(content)
+
+        setContentView(root)
     }
 
     private fun addSwitchRow(
-        root: LinearLayout,
-        title: String,
-        summary: String,
+        parent: LinearLayout,
+        titleText: String,
+        summaryText: String,
         checked: Boolean,
         onChanged: (Boolean) -> Unit
     ) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(64)
-            setPadding(dp(20), 0, dp(20), 0)
+            setPadding(dp(20), dp(12), dp(16), dp(12))
         }
 
         val textContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            )
         }
 
-        val titleView = TextView(this).apply {
-            text = title
+        val title = TextView(this).apply {
+            text = titleText
             textSize = 16f
             setTextColor(
                 ContextCompat.getColor(
@@ -189,62 +244,59 @@ class SettingsActivity : AppCompatActivity() {
             )
         }
 
-        val summaryView = TextView(this).apply {
-            text = summary
+        val summary = TextView(this).apply {
+            text = summaryText
             textSize = 13f
+            setPadding(0, dp(3), 0, 0)
             setTextColor(
                 ContextCompat.getColor(
                     this@SettingsActivity,
                     R.color.messages_text_secondary
                 )
             )
-            setPadding(0, dp(4), 0, 0)
         }
 
-        textContainer.addView(titleView)
-        textContainer.addView(summaryView)
+        textContainer.addView(title)
+        textContainer.addView(summary)
 
-        val switch = ModernToggleView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(48), dp(24))
-            setChecked(checked)
-            setOnCheckedChangeListener { enabled ->
+        row.addView(
+            textContainer,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        val switch = SwitchCompat(this).apply {
+            isChecked = checked
+            setOnCheckedChangeListener { _, enabled ->
                 onChanged(enabled)
             }
         }
 
-        row.addView(textContainer)
         row.addView(switch)
 
-        root.addView(row)
+        parent.addView(row)
     }
 
     private fun addActionRow(
-        root: LinearLayout,
-        title: String,
-        summary: String,
-        preferenceKey: String,
-        defaultAction: String
+        parent: LinearLayout,
+        titleText: String,
+        action: String,
+        onClick: () -> Unit
     ) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(76)
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-            isClickable = true
-            isFocusable = true
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+            setOnClickListener {
+                onClick()
+            }
         }
 
-        val textContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            )
-        }
-
-        val titleView = TextView(this).apply {
-            text = title
+        val title = TextView(this).apply {
+            text = titleText
             textSize = 16f
             setTextColor(
                 ContextCompat.getColor(
@@ -254,185 +306,364 @@ class SettingsActivity : AppCompatActivity() {
             )
         }
 
-        val summaryView = TextView(this).apply {
-            text = summary
-            textSize = 13f
+        val value = TextView(this).apply {
+            text = if (action == SWIPE_ACTION_DELETE) {
+                "Delete"
+            } else {
+                "Archive"
+            }
+            textSize = 15f
             setTextColor(
                 ContextCompat.getColor(
                     this@SettingsActivity,
                     R.color.messages_text_secondary
                 )
             )
-            setPadding(0, dp(4), 0, 0)
         }
 
-        textContainer.addView(titleView)
-        textContainer.addView(summaryView)
+        row.addView(
+            title,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
 
-        val valueView = TextView(this).apply {
-            textSize = 15f
+        row.addView(value)
+
+        parent.addView(row)
+    }
+
+    private fun addBlockedContactsRow(parent: LinearLayout) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20), dp(14), dp(16), dp(14))
+            setOnClickListener {
+                showBlockedContacts()
+            }
+        }
+
+        val textContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val title = TextView(this).apply {
+            text = "Blocked contacts"
+            textSize = 16f
             setTextColor(
                 ContextCompat.getColor(
                     this@SettingsActivity,
                     R.color.messages_text_primary
                 )
             )
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, 0, 0)
         }
 
-        fun updateValue() {
-            val action = prefs.getString(
-                preferenceKey,
-                defaultAction
-            ) ?: defaultAction
-
-            valueView.text =
-                if (action == SWIPE_ACTION_DELETE) {
-                    "Delete  ›"
-                } else {
-                    "Archive  ›"
-                }
+        val summary = TextView(this).apply {
+            text = getBlockedSummary()
+            textSize = 13f
+            setPadding(0, dp(3), 0, 0)
+            setTextColor(
+                ContextCompat.getColor(
+                    this@SettingsActivity,
+                    R.color.messages_text_secondary
+                )
+            )
         }
 
-        row.setOnClickListener {
-            val current = prefs.getString(
-                preferenceKey,
-                defaultAction
-            ) ?: defaultAction
+        textContainer.addView(title)
+        textContainer.addView(summary)
 
-            val selectedIndex =
-                if (current == SWIPE_ACTION_DELETE) 0 else 1
+        row.addView(
+            textContainer,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
 
-            val dialog = android.app.Dialog(this)
+        val arrow = TextView(this).apply {
+            text = "›"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(
+                ContextCompat.getColor(
+                    this@SettingsActivity,
+                    R.color.messages_text_secondary
+                )
+            )
+        }
+
+        row.addView(
+            arrow,
+            LinearLayout.LayoutParams(dp(32), dp(48))
+        )
+
+        parent.addView(row)
+    }
+
+    private fun getBlockedSummary(): String {
+        val count = BlockHelper.getBlockedAddresses(this).size
+
+        return when (count) {
+            0 -> "No blocked contacts"
+            1 -> "1 blocked contact"
+            else -> "$count blocked contacts"
+        }
+    }
+
+    private fun showBlockedContacts() {
+        val addresses = BlockHelper
+            .getBlockedAddresses(this)
+            .toList()
+            .sorted()
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Blocked contacts")
+            .create()
+
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), 0, dp(20), dp(8))
+        }
+
+        if (addresses.isEmpty()) {
+            val empty = TextView(this).apply {
+                text = "No blocked contacts"
+                textSize = 15f
+                setPadding(0, dp(16), 0, dp(20))
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@SettingsActivity,
+                        R.color.messages_text_secondary
+                    )
+                )
+            }
+
+            outer.addView(empty)
+        } else {
+            // Scrollable blocked-contact list
+            val scrollView = ScrollView(this).apply {
+                overScrollMode = ScrollView.OVER_SCROLL_IF_CONTENT_SCROLLS
+            }
 
             val container = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(24), dp(20), dp(24), dp(12))
-                background = android.graphics.drawable.GradientDrawable().apply {
+            }
+
+            addresses.forEach { address ->
+                addBlockedContactRow(
+                    container,
+                    address,
+                    dialog
+                )
+            }
+
+            scrollView.addView(
+                container,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            outer.addView(
+                scrollView,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(420)
+                )
+            )
+        }
+
+        dialog.setView(outer)
+
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(
+                GradientDrawable().apply {
                     setColor(
                         ContextCompat.getColor(
                             this@SettingsActivity,
                             R.color.messages_surface
                         )
                     )
-                    cornerRadius = dp(28).toFloat()
+                    cornerRadius = dp(20).toFloat()
                 }
-            }
-
-            val dialogTitle = TextView(this).apply {
-                text = title
-                textSize = 20f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(
-                    ContextCompat.getColor(
-                        this@SettingsActivity,
-                        R.color.messages_text_primary
-                    )
-                )
-                setPadding(0, 0, 0, dp(12))
-            }
-
-            container.addView(dialogTitle)
-
-            fun addChoice(label: String, value: String, selected: Boolean) {
-                val choice = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    minimumHeight = dp(52)
-                    setPadding(dp(4), 0, dp(4), 0)
-                    isClickable = true
-                    isFocusable = true
-
-                    setOnClickListener {
-                        prefs.edit()
-                            .putString(preferenceKey, value)
-                            .apply()
-
-                        updateValue()
-                        dialog.dismiss()
-                    }
-                }
-
-                val indicator = TextView(this).apply {
-                    text = if (selected) "●" else "○"
-                    textSize = 22f
-                    gravity = Gravity.CENTER
-                    setTextColor(
-                        ContextCompat.getColor(
-                            this@SettingsActivity,
-                            if (selected) {
-                                R.color.messages_primary
-                            } else {
-                                R.color.messages_text_secondary
-                            }
-                        )
-                    )
-                    layoutParams = LinearLayout.LayoutParams(
-                        dp(40),
-                        dp(48)
-                    )
-                }
-
-                val labelView = TextView(this).apply {
-                    text = label
-                    textSize = 16f
-                    gravity = Gravity.CENTER_VERTICAL
-                    setTextColor(
-                        ContextCompat.getColor(
-                            this@SettingsActivity,
-                            R.color.messages_text_primary
-                        )
-                    )
-                    layoutParams = LinearLayout.LayoutParams(
-                        0,
-                        dp(48),
-                        1f
-                    )
-                }
-
-                choice.addView(indicator)
-                choice.addView(labelView)
-                container.addView(choice)
-            }
-
-            addChoice(
-                "Delete",
-                SWIPE_ACTION_DELETE,
-                selectedIndex == 0
-            )
-
-            addChoice(
-                "Archive",
-                SWIPE_ACTION_ARCHIVE,
-                selectedIndex == 1
-            )
-
-            dialog.setContentView(container)
-
-            dialog.window?.setBackgroundDrawableResource(
-                android.R.color.transparent
             )
 
             dialog.window?.setLayout(
-                dp(320),
-                android.view.WindowManager.LayoutParams.WRAP_CONTENT
-            )
-
-            dialog.show()
-
-            dialog.window?.setLayout(
-                dp(320),
-                android.view.WindowManager.LayoutParams.WRAP_CONTENT
+                dp(340),
+                LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
 
-        row.addView(textContainer)
-        row.addView(valueView)
+        dialog.show()
 
-        root.addView(row)
+        dialog.window?.setBackgroundDrawable(
+            GradientDrawable().apply {
+                setColor(
+                    ContextCompat.getColor(
+                        this@SettingsActivity,
+                        R.color.messages_surface
+                    )
+                )
+                cornerRadius = dp(20).toFloat()
+            }
+        )
 
-        updateValue()
+        dialog.window?.setLayout(
+            dp(340),
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+    }
+
+    private fun addBlockedContactRow(
+        container: LinearLayout,
+        address: String,
+        dialog: AlertDialog
+    ) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, dp(10))
+        }
+
+        val textContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val contactName = getContactName(address)
+
+        val title = TextView(this).apply {
+            text = contactName ?: address
+            textSize = 16f
+            setTextColor(
+                ContextCompat.getColor(
+                    this@SettingsActivity,
+                    R.color.messages_text_primary
+                )
+            )
+        }
+
+        textContainer.addView(title)
+
+        if (contactName != null) {
+            val number = TextView(this).apply {
+                text = address
+                textSize = 13f
+                setPadding(0, dp(3), 0, 0)
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@SettingsActivity,
+                        R.color.messages_text_secondary
+                    )
+                )
+            }
+
+            textContainer.addView(number)
+        }
+
+        row.addView(
+            textContainer,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        val unblock = TextView(this).apply {
+            text = "Unblock"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(4), dp(8))
+            setTextColor(
+                ContextCompat.getColor(
+                    this@SettingsActivity,
+                    R.color.messages_primary
+                )
+            )
+
+            setOnClickListener {
+                BlockHelper.unblock(
+                    this@SettingsActivity,
+                    address
+                )
+
+                Toast.makeText(
+                    this@SettingsActivity,
+                    "Unblocked",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                dialog.dismiss()
+                showBlockedContacts()
+            }
+        }
+
+        row.addView(unblock)
+
+        container.addView(row)
+    }
+
+    private fun getContactName(address: String): String? {
+        return try {
+            contentResolver.query(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI.buildUpon()
+                    .appendPath(address)
+                    .build(),
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getString(
+                        cursor.getColumnIndexOrThrow(
+                            ContactsContract.PhoneLookup.DISPLAY_NAME
+                        )
+                    )
+                } else {
+                    null
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun showSwipeActionDialog(left: Boolean) {
+        val current = prefs.getString(
+            if (left) PREF_SWIPE_LEFT else PREF_SWIPE_RIGHT,
+            if (left) SWIPE_ACTION_DELETE else SWIPE_ACTION_ARCHIVE
+        )
+
+        val options = arrayOf("Delete", "Archive")
+        val checked = if (current == SWIPE_ACTION_DELETE) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle(if (left) "Swipe left" else "Swipe right")
+            .setSingleChoiceItems(options, checked) { dialog, which ->
+                val value = if (which == 0) {
+                    SWIPE_ACTION_DELETE
+                } else {
+                    SWIPE_ACTION_ARCHIVE
+                }
+
+                prefs.edit()
+                    .putString(
+                        if (left) PREF_SWIPE_LEFT else PREF_SWIPE_RIGHT,
+                        value
+                    )
+                    .apply()
+
+                dialog.dismiss()
+                recreate()
+            }
+            .show()
     }
 
     private fun dp(value: Int): Int {

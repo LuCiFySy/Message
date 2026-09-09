@@ -22,7 +22,7 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Back"
             android:padding="12dp"
-            android:src="@android:drawable/ic_menu_revert"
+            android:src="@drawable/ic_arrow_back"
             app:tint="@color/messages_text_primary" />
 
         <TextView
@@ -64,6 +64,16 @@
                 android:textSize="12sp" />
 
         </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/conversationMenuButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Conversation options"
+            android:padding="12dp"
+            android:src="@drawable/ic_more_vert"
+            app:tint="@color/messages_text_primary" />
 
     </LinearLayout>
 

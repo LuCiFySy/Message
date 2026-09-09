@@ -10,16 +10,22 @@ import android.provider.Telephony
 class SmsStatusReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        val messageId = intent.getLongExtra("message_id", -1L)
+        val messageId =
+            intent.getLongExtra("message_id", -1L)
+
         if (messageId <= 0L) return
 
         val action = intent.action ?: return
 
         if (action == ACTION_SMS_SENT) {
+
+            val success =
+                resultCode == Activity.RESULT_OK
+
             val values = ContentValues().apply {
                 put(
                     Telephony.Sms.TYPE,
-                    if (resultCode == Activity.RESULT_OK) {
+                    if (success) {
                         Telephony.Sms.MESSAGE_TYPE_SENT
                     } else {
                         Telephony.Sms.MESSAGE_TYPE_FAILED
@@ -35,12 +41,66 @@ class SmsStatusReceiver : BroadcastReceiver() {
                     arrayOf(messageId.toString())
                 )
 
-                notifyConversationChanged(context, messageId)
+                notifyConversationChanged(
+                    context,
+                    messageId
+                )
             } catch (_: Exception) {
             }
+
+            val scheduledId =
+                intent.getLongExtra(
+                    "scheduled_id",
+                    -1L
+                )
+
+            if (scheduledId > 0L) {
+
+                if (success) {
+
+                    ScheduledMessageReceiver.cancelAlarm(
+                        context,
+                        scheduledId
+                    )
+
+                    ScheduledMessageStore.remove(
+                        context,
+                        scheduledId
+                    )
+
+                    ScheduledMessageNotification.showSent(
+                        context
+                    )
+
+                } else {
+
+                    val scheduled =
+                        ScheduledMessageStore.get(
+                            context,
+                            scheduledId
+                        )
+
+                    if (scheduled != null) {
+                        ScheduledMessageStore.markMissed(
+                            context,
+                            scheduledId
+                        )
+
+                        ScheduledMessageNotification.showMissed(
+                            context,
+                            scheduled.copy(missed = true)
+                        )
+                    }
+                }
+            }
+
         } else if (action == ACTION_SMS_DELIVERED) {
+
             val values = ContentValues().apply {
-                put(Telephony.TextBasedSmsColumns.STATUS, Telephony.TextBasedSmsColumns.STATUS_COMPLETE)
+                put(
+                    Telephony.TextBasedSmsColumns.STATUS,
+                    Telephony.TextBasedSmsColumns.STATUS_COMPLETE
+                )
             }
 
             try {
@@ -51,13 +111,19 @@ class SmsStatusReceiver : BroadcastReceiver() {
                     arrayOf(messageId.toString())
                 )
 
-                notifyConversationChanged(context, messageId)
+                notifyConversationChanged(
+                    context,
+                    messageId
+                )
             } catch (_: Exception) {
             }
         }
     }
 
-    private fun notifyConversationChanged(context: Context, messageId: Long) {
+    private fun notifyConversationChanged(
+        context: Context,
+        messageId: Long
+    ) {
         try {
             context.contentResolver.query(
                 Telephony.Sms.CONTENT_URI,
@@ -66,13 +132,19 @@ class SmsStatusReceiver : BroadcastReceiver() {
                 arrayOf(messageId.toString()),
                 null
             )?.use { cursor ->
+
                 if (cursor.moveToFirst()) {
                     val threadId = cursor.getLong(0)
 
                     context.sendBroadcast(
-                        Intent(ConversationActivity.ACTION_MESSAGES_CHANGED).apply {
+                        Intent(
+                            ConversationActivity.ACTION_MESSAGES_CHANGED
+                        ).apply {
                             setPackage(context.packageName)
-                            putExtra("thread_id", threadId)
+                            putExtra(
+                                "thread_id",
+                                threadId
+                            )
                         }
                     )
                 }
@@ -82,6 +154,7 @@ class SmsStatusReceiver : BroadcastReceiver() {
     }
 
     companion object {
+
         const val ACTION_SMS_SENT =
             "com.saurabh.messages.ACTION_SMS_SENT"
 

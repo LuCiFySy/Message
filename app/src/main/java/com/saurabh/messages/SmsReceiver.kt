@@ -30,6 +30,11 @@ class SmsReceiver : BroadcastReceiver() {
             return
         }
 
+        if (BlockHelper.isBlocked(context, address)) {
+            Log.d(TAG, "Ignoring SMS from blocked address: $address")
+            return
+        }
+
         val body = messages.joinToString(separator = "") {
             it.messageBody ?: ""
         }

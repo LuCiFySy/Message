@@ -514,6 +514,11 @@ class MainActivity : AppCompatActivity() {
                             cursor.getString(threadIdIndex) ?: continue
                         val address =
                             cursor.getString(addressIndex) ?: "Unknown"
+
+                        if (BlockHelper.isBlocked(this@MainActivity, address)) {
+                            continue
+                        }
+
                         val body =
                             cursor.getString(bodyIndex) ?: ""
                         val date =

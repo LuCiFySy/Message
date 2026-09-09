@@ -119,12 +119,81 @@ object NotificationHelper {
             ?.value
     }
 
+    private const val MUTE_PREFIX = "mute_until_"
+    private const val MUTE_ALWAYS = Long.MAX_VALUE
+
+    fun getMuteUntil(context: Context, address: String): Long {
+        val prefs = context.getSharedPreferences(
+            "messages_settings",
+            Context.MODE_PRIVATE
+        )
+
+        val value = prefs.getLong(
+            MUTE_PREFIX + address,
+            0L
+        )
+
+        if (value != 0L && value != MUTE_ALWAYS &&
+            value <= System.currentTimeMillis()
+        ) {
+            prefs.edit()
+                .remove(MUTE_PREFIX + address)
+                .apply()
+
+            return 0L
+        }
+
+        return value
+    }
+
+    fun isMuted(context: Context, address: String): Boolean {
+        return getMuteUntil(context, address) != 0L
+    }
+
+    fun setMutedUntil(
+        context: Context,
+        address: String,
+        muteUntil: Long
+    ) {
+        context.getSharedPreferences(
+            "messages_settings",
+            Context.MODE_PRIVATE
+        )
+            .edit()
+            .putLong(
+                MUTE_PREFIX + address,
+                muteUntil
+            )
+            .apply()
+    }
+
+    fun unmute(
+        context: Context,
+        address: String
+    ) {
+        context.getSharedPreferences(
+            "messages_settings",
+            Context.MODE_PRIVATE
+        )
+            .edit()
+            .remove(MUTE_PREFIX + address)
+            .apply()
+    }
+
     fun showMessageNotification(
         context: Context,
         messageId: Long,
         address: String,
         body: String
     ) {
+        if (BlockHelper.isBlocked(context, address)) {
+            return
+        }
+
+        if (isMuted(context, address)) {
+            return
+        }
+
         createChannel(context)
 
         val openIntent = Intent(

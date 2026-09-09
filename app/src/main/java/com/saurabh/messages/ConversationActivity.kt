@@ -24,6 +24,11 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.LinearLayout
 import android.widget.Toast
+import android.widget.PopupWindow
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.provider.Settings
+import android.widget.ScrollView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -184,6 +189,10 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             finish()
         }
 
+        findViewById<View>(R.id.conversationMenuButton).setOnClickListener {
+            showConversationMenu()
+        }
+
         findViewById<View>(R.id.attachmentButton).setOnClickListener {
             attachmentPicker.launch(
                 arrayOf("*/*")
@@ -231,6 +240,871 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             markConversationRead()
             loadMessages()
         }
+    }
+
+    private fun showConversationMenu() {
+        val density = resources.displayMetrics.density
+
+        fun dp(value: Int): Int =
+            (value * density + 0.5f).toInt()
+
+        val menu = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                dp(8),
+                dp(8),
+                dp(8),
+                dp(8)
+            )
+            background = GradientDrawable().apply {
+                setColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_surface
+                    )
+                )
+                cornerRadius = dp(20).toFloat()
+            }
+        }
+
+        fun addItem(
+            title: String,
+            onClick: () -> Unit
+        ) {
+            val item = TextView(this).apply {
+                text = title
+                textSize = 16f
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_text_primary
+                    )
+                )
+                setPadding(
+                    dp(16),
+                    0,
+                    dp(20),
+                    0
+                )
+                isClickable = true
+                isFocusable = true
+
+                layoutParams = LinearLayout.LayoutParams(
+                    dp(220),
+                    dp(52)
+                )
+
+                setOnClickListener {
+                    onClick()
+                }
+            }
+
+            menu.addView(item)
+        }
+
+        var popup: PopupWindow? = null
+
+        val hasContact = getContactName(address) != null
+
+        addItem(
+            if (hasContact) "View contact" else "Add to contacts"
+        ) {
+            popup?.dismiss()
+
+            if (hasContact) {
+                openContact(address)
+            } else {
+                addContact(address)
+            }
+        }
+
+        val muted = NotificationHelper.isMuted(this, address)
+
+        addItem(
+            if (muted) "Unmute notifications"
+            else "Mute notifications"
+        ) {
+            if (muted) {
+                NotificationHelper.unmute(this, address)
+                popup?.dismiss()
+
+                Toast.makeText(
+                    this,
+                    "Notifications unmuted",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                popup?.dismiss()
+                showMuteOptions()
+            }
+        }
+
+        addItem("Scheduled messages") {
+        popup?.dismiss()
+        showScheduledMessagesDialog()
+    }
+        val blocked = BlockHelper.isBlocked(this, address)
+
+        addItem(
+            if (blocked) "Unblock" else "Block"
+        ) {
+            popup?.dismiss()
+
+            if (blocked) {
+                BlockHelper.unblock(this, address)
+
+                Toast.makeText(
+                    this,
+                    "Number unblocked",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                showBlockOptions()
+            }
+        }
+
+        popup = PopupWindow(
+            menu,
+            dp(236),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = dp(8).toFloat()
+            setBackgroundDrawable(
+                GradientDrawable().apply {
+                    setColor(
+                        ContextCompat.getColor(
+                            this@ConversationActivity,
+                            R.color.messages_surface
+                        )
+                    )
+                    cornerRadius = dp(20).toFloat()
+                }
+            )
+            isOutsideTouchable = true
+        }
+
+        val anchor = findViewById<View>(R.id.conversationMenuButton)
+
+        popup.showAsDropDown(
+            anchor,
+            -dp(188),
+            -dp(4)
+        )
+    }
+
+    private fun showBlockOptions() {
+        val density = resources.displayMetrics.density
+
+        fun dp(value: Int): Int =
+            (value * density + 0.5f).toInt()
+
+        val contactName = getContactName(address) ?: address
+
+        val dialog = android.app.Dialog(this)
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                dp(24),
+                dp(22),
+                dp(16),
+                dp(12)
+            )
+
+            background = GradientDrawable().apply {
+                setColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_surface
+                    )
+                )
+                cornerRadius = dp(28).toFloat()
+            }
+        }
+
+        val title = TextView(this).apply {
+            text = "Block $contactName?"
+            textSize = 22f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(
+                ContextCompat.getColor(
+                    this@ConversationActivity,
+                    R.color.messages_text_primary
+                )
+            )
+            setPadding(
+                dp(4),
+                0,
+                dp(4),
+                dp(8)
+            )
+        }
+
+        val message = TextView(this).apply {
+            text = "Choose what you want to do with the existing chat."
+            textSize = 16f
+            setTextColor(
+                ContextCompat.getColor(
+                    this@ConversationActivity,
+                    R.color.messages_text_secondary
+                )
+            )
+            setPadding(
+                dp(4),
+                0,
+                dp(4),
+                dp(12)
+            )
+        }
+
+        container.addView(title)
+        container.addView(message)
+
+        fun addOption(
+            text: String,
+            onClick: () -> Unit
+        ) {
+            val option = TextView(this).apply {
+                this.text = text
+                textSize = 16f
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_text_primary
+                    )
+                )
+                setPadding(
+                    dp(16),
+                    0,
+                    dp(16),
+                    0
+                )
+                isClickable = true
+                isFocusable = true
+
+                background = GradientDrawable().apply {
+                    setColor(Color.TRANSPARENT)
+                    cornerRadius = dp(16).toFloat()
+                }
+
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(52)
+                ).apply {
+                    setMargins(
+                        0,
+                        dp(2),
+                        0,
+                        dp(2)
+                    )
+                }
+
+                setOnClickListener {
+                    onClick()
+                }
+            }
+
+            container.addView(option)
+        }
+
+        addOption("Block & delete chat") {
+            BlockHelper.block(
+                this,
+                address
+            )
+
+            dialog.dismiss()
+
+            Thread {
+                try {
+                    contentResolver.delete(
+                        Telephony.Sms.CONTENT_URI,
+                        "${Telephony.Sms.THREAD_ID}=?",
+                        arrayOf(threadId)
+                    )
+                } catch (_: Exception) {
+                }
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Number blocked and chat deleted",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    finish()
+                }
+            }.start()
+        }
+
+        addOption("Block only") {
+            BlockHelper.block(
+                this,
+                address
+            )
+
+            dialog.dismiss()
+
+            Toast.makeText(
+                this,
+                "Number blocked",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            finish()
+        }
+
+        addOption("Cancel") {
+            dialog.dismiss()
+        }
+
+        dialog.setContentView(container)
+        dialog.setCanceledOnTouchOutside(true)
+
+        dialog.window?.apply {
+            setBackgroundDrawable(
+                android.graphics.drawable.ColorDrawable(
+                    Color.TRANSPARENT
+                )
+            )
+
+            addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND
+            )
+
+            attributes = attributes.apply {
+                dimAmount = 0.60f
+            }
+        }
+
+        dialog.show()
+
+        dialog.window?.setLayout(
+            dp(340),
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+    }
+
+    private fun openContact(phoneNumber: String) {
+        try {
+            val lookupUri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(phoneNumber)
+            )
+
+            val projection = arrayOf(
+                ContactsContract.PhoneLookup.CONTACT_ID
+            )
+
+            contentResolver.query(
+                lookupUri,
+                projection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val contactId = cursor.getLong(0)
+
+                    val contactUri = Uri.withAppendedPath(
+                        ContactsContract.Contacts.CONTENT_URI,
+                        contactId.toString()
+                    )
+
+                    startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            contactUri
+                        )
+                    )
+                    return
+                }
+            }
+
+            addContact(phoneNumber)
+        } catch (_: Exception) {
+            Toast.makeText(
+                this,
+                "Unable to open contact",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun addContact(phoneNumber: String) {
+        try {
+            val intent = Intent(
+                Intent.ACTION_INSERT,
+                ContactsContract.Contacts.CONTENT_URI
+            ).apply {
+                putExtra(
+                    ContactsContract.Intents.Insert.PHONE,
+                    phoneNumber
+                )
+            }
+
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(
+                this,
+                "Unable to open contacts",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun showMuteOptions() {
+        val density = resources.displayMetrics.density
+
+        fun dp(value: Int): Int =
+            (value * density + 0.5f).toInt()
+
+        val surfaceColor = ContextCompat.getColor(
+            this,
+            R.color.messages_surface
+        )
+
+        val primaryColor = ContextCompat.getColor(
+            this,
+            R.color.messages_text_primary
+        )
+
+        val dialog = android.app.Dialog(this)
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                dp(12),
+                dp(20),
+                dp(12),
+                dp(12)
+            )
+            background = GradientDrawable().apply {
+                setColor(surfaceColor)
+                cornerRadius = dp(28).toFloat()
+            }
+        }
+
+        val title = TextView(this).apply {
+            text = "Mute notifications"
+            textSize = 22f
+            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(primaryColor)
+            setPadding(
+                dp(16),
+                0,
+                dp(16),
+                dp(12)
+            )
+
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(52)
+            )
+        }
+
+        container.addView(title)
+
+        fun addOption(
+            text: String,
+            onClick: () -> Unit
+        ) {
+            val option = TextView(this).apply {
+                this.text = text
+                textSize = 16f
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(primaryColor)
+                setPadding(
+                    dp(16),
+                    0,
+                    dp(16),
+                    0
+                )
+                isClickable = true
+                isFocusable = true
+
+                background = GradientDrawable().apply {
+                    setColor(android.graphics.Color.TRANSPARENT)
+                    cornerRadius = dp(16).toFloat()
+                }
+
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(52)
+                ).apply {
+                    setMargins(
+                        0,
+                        dp(2),
+                        0,
+                        dp(2)
+                    )
+                }
+
+                setOnClickListener {
+                    dialog.dismiss()
+                    onClick()
+                }
+            }
+
+            container.addView(option)
+        }
+
+        addOption("1 hour") {
+            NotificationHelper.setMutedUntil(
+                this,
+                address,
+                System.currentTimeMillis() +
+                    60L * 60L * 1000L
+            )
+
+            Toast.makeText(
+                this,
+                "Notifications muted",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        addOption("8 hours") {
+            NotificationHelper.setMutedUntil(
+                this,
+                address,
+                System.currentTimeMillis() +
+                    8L * 60L * 60L * 1000L
+            )
+
+            Toast.makeText(
+                this,
+                "Notifications muted",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        addOption("Always") {
+            NotificationHelper.setMutedUntil(
+                this,
+                address,
+                Long.MAX_VALUE
+            )
+
+            Toast.makeText(
+                this,
+                "Notifications muted",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        addOption("Custom time") {
+            showCustomMuteTime()
+        }
+
+        dialog.setContentView(container)
+        dialog.setCanceledOnTouchOutside(true)
+
+        dialog.window?.apply {
+            setBackgroundDrawable(
+                android.graphics.drawable.ColorDrawable(
+                    android.graphics.Color.TRANSPARENT
+                )
+            )
+
+            addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND
+            )
+
+            attributes = attributes.apply {
+                dimAmount = 0.60f
+            }
+        }
+
+        dialog.show()
+
+        dialog.window?.setLayout(
+            minOf(
+                dp(360),
+                resources.displayMetrics.widthPixels - dp(32)
+            ),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+    }
+
+    private fun showCustomMuteTime() {
+        val density = resources.displayMetrics.density
+
+        fun dp(value: Int): Int =
+            (value * density + 0.5f).toInt()
+
+        val surfaceColor = ContextCompat.getColor(
+            this,
+            R.color.messages_surface
+        )
+
+        val primaryColor = ContextCompat.getColor(
+            this,
+            R.color.messages_text_primary
+        )
+
+        val calendar = java.util.Calendar.getInstance().apply {
+            add(java.util.Calendar.HOUR_OF_DAY, 1)
+        }
+
+        fun createDialog(
+            titleText: String
+        ): Pair<android.app.Dialog, LinearLayout> {
+            val dialog = android.app.Dialog(this)
+
+            val container = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(
+                    dp(16),
+                    dp(20),
+                    dp(16),
+                    dp(12)
+                )
+                background = GradientDrawable().apply {
+                    setColor(surfaceColor)
+                    cornerRadius = dp(28).toFloat()
+                }
+            }
+
+            val title = TextView(this).apply {
+                text = titleText
+                textSize = 22f
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(primaryColor)
+                setPadding(
+                    dp(8),
+                    0,
+                    dp(8),
+                    dp(12)
+                )
+
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(48)
+                )
+            }
+
+            container.addView(title)
+
+            dialog.setContentView(container)
+            dialog.setCanceledOnTouchOutside(true)
+
+            dialog.window?.apply {
+                setBackgroundDrawable(
+                    android.graphics.drawable.ColorDrawable(
+                        android.graphics.Color.TRANSPARENT
+                    )
+                )
+
+                addFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND
+                )
+
+                attributes = attributes.apply {
+                    dimAmount = 0.60f
+                }
+            }
+
+            return Pair(dialog, container)
+        }
+
+        fun addButtons(
+            container: LinearLayout,
+            cancelAction: () -> Unit,
+            nextAction: () -> Unit
+        ) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                setPadding(
+                    0,
+                    dp(8),
+                    0,
+                    0
+                )
+
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(56)
+                )
+            }
+
+            fun addButton(
+                text: String,
+                action: () -> Unit
+            ) {
+                val button = TextView(this).apply {
+                    this.text = text
+                    textSize = 14f
+                    gravity = Gravity.CENTER
+                    setTextColor(primaryColor)
+                    isClickable = true
+                    isFocusable = true
+
+                    setPadding(
+                        dp(16),
+                        0,
+                        dp(16),
+                        0
+                    )
+
+                    layoutParams = LinearLayout.LayoutParams(
+                        dp(88),
+                        dp(48)
+                    )
+
+                    setOnClickListener {
+                        action()
+                    }
+                }
+
+                row.addView(button)
+            }
+
+            addButton("Cancel", cancelAction)
+            addButton("Next", nextAction)
+
+            container.addView(row)
+        }
+
+        val dateParts = createDialog("Choose date")
+        val dateDialog = dateParts.first
+        val dateContainer = dateParts.second
+
+        val datePicker = android.widget.DatePicker(this).apply {
+            init(
+                calendar.get(java.util.Calendar.YEAR),
+                calendar.get(java.util.Calendar.MONTH),
+                calendar.get(java.util.Calendar.DAY_OF_MONTH),
+                null
+            )
+
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        dateContainer.addView(datePicker)
+
+        addButtons(
+            dateContainer,
+            cancelAction = {
+                dateDialog.dismiss()
+            },
+            nextAction = {
+                calendar.set(
+                    java.util.Calendar.YEAR,
+                    datePicker.year
+                )
+                calendar.set(
+                    java.util.Calendar.MONTH,
+                    datePicker.month
+                )
+                calendar.set(
+                    java.util.Calendar.DAY_OF_MONTH,
+                    datePicker.dayOfMonth
+                )
+
+                dateDialog.dismiss()
+
+                val timeParts = createDialog("Choose time")
+                val timeDialog = timeParts.first
+                val timeContainer = timeParts.second
+
+                val timePicker = android.widget.TimePicker(this).apply {
+                    setIs24HourView(false)
+
+                    hour = calendar.get(
+                        java.util.Calendar.HOUR_OF_DAY
+                    )
+
+                    minute = calendar.get(
+                        java.util.Calendar.MINUTE
+                    )
+
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                }
+
+                timeContainer.addView(timePicker)
+
+                addButtons(
+                    timeContainer,
+                    cancelAction = {
+                        timeDialog.dismiss()
+                    },
+                    nextAction = {
+                        calendar.set(
+                            java.util.Calendar.HOUR_OF_DAY,
+                            timePicker.hour
+                        )
+                        calendar.set(
+                            java.util.Calendar.MINUTE,
+                            timePicker.minute
+                        )
+                        calendar.set(
+                            java.util.Calendar.SECOND,
+                            0
+                        )
+                        calendar.set(
+                            java.util.Calendar.MILLISECOND,
+                            0
+                        )
+
+                        if (calendar.timeInMillis <=
+                            System.currentTimeMillis()
+                        ) {
+                            Toast.makeText(
+                                this,
+                                "Choose a future time",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            return@addButtons
+                        }
+
+                        NotificationHelper.setMutedUntil(
+                            this,
+                            address,
+                            calendar.timeInMillis
+                        )
+
+                        Toast.makeText(
+                            this,
+                            "Notifications muted",
+                            Toast.LENGTH_SHORT
+                        ).show()
+
+                        timeDialog.dismiss()
+                    }
+                )
+
+                timeDialog.show()
+
+                timeDialog.window?.setLayout(
+                    minOf(
+                        dp(360),
+                        resources.displayMetrics.widthPixels - dp(32)
+                    ),
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+        )
+
+        dateDialog.show()
+
+        dateDialog.window?.setLayout(
+            minOf(
+                dp(360),
+                resources.displayMetrics.widthPixels - dp(32)
+            ),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        )
     }
 
     private fun loadMessages() {
@@ -921,6 +1795,608 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
     }
 
+    private fun showScheduledMessagesDialog(
+        editing: ScheduledMessage? = null
+    ) {
+        val dialog = android.app.Dialog(this)
+
+        val dialogBackground =
+            ContextCompat.getColor(
+                this,
+                R.color.messages_surface
+            )
+
+        val primaryText =
+            ContextCompat.getColor(
+                this,
+                R.color.messages_text_primary
+            )
+
+        val secondaryText =
+            ContextCompat.getColor(
+                this,
+                R.color.messages_text_secondary
+            )
+
+        val hintText =
+            ContextCompat.getColor(
+                this,
+                R.color.messages_text_hint
+            )
+
+        val fieldBackground =
+            ContextCompat.getColor(
+                this,
+                R.color.messages_surface_variant
+            )
+
+        val primaryColor =
+            ContextCompat.getColor(
+                this,
+                R.color.messages_primary
+            )
+
+        val onPrimaryColor =
+            ContextCompat.getColor(
+                this,
+                R.color.messages_on_primary
+            )
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                dp(20),
+                dp(18),
+                dp(20),
+                dp(12)
+            )
+            background = GradientDrawable().apply {
+                setColor(dialogBackground)
+                cornerRadius = dp(20).toFloat()
+            }
+        }
+
+        val title = TextView(this).apply {
+            text = if (editing == null) {
+                "Scheduled messages"
+            } else {
+                "Edit scheduled message"
+            }
+            textSize = 20f
+            setTextColor(primaryText)
+            setTypeface(null, Typeface.BOLD)
+        }
+        root.addView(
+            title,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        val bodyInput = EditText(this).apply {
+            hint = "Message"
+            textSize = 16f
+            gravity = Gravity.TOP
+            minLines = 3
+            setTextColor(primaryText)
+            setHintTextColor(hintText)
+            setPadding(
+                dp(12),
+                dp(10),
+                dp(12),
+                dp(10)
+            )
+        }
+
+        if (editing != null) {
+            bodyInput.setText(editing.body)
+            bodyInput.setSelection(bodyInput.text.length)
+        }
+
+        val bodyParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topMargin = dp(16)
+        }
+        root.addView(bodyInput, bodyParams)
+
+
+        val selectedTime = java.util.Calendar.getInstance().apply {
+            if (editing != null) {
+                timeInMillis = editing.scheduledAt
+            } else {
+                add(java.util.Calendar.HOUR_OF_DAY, 1)
+                set(
+                    java.util.Calendar.SECOND,
+                    0
+                )
+                set(
+                    java.util.Calendar.MILLISECOND,
+                    0
+                )
+            }
+        }
+
+        val dateButton = TextView(this).apply {
+            textSize = 16f
+            setTextColor(primaryText)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(
+                dp(12),
+                dp(12),
+                dp(12),
+                dp(12)
+            )
+            background = GradientDrawable().apply {
+                setColor(fieldBackground)
+                cornerRadius = dp(12).toFloat()
+            }
+        }
+
+        val timeButton = TextView(this).apply {
+            textSize = 16f
+            setTextColor(primaryText)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(
+                dp(12),
+                dp(12),
+                dp(12),
+                dp(12)
+            )
+            background = GradientDrawable().apply {
+                setColor(fieldBackground)
+                cornerRadius = dp(12).toFloat()
+            }
+        }
+
+        fun updateDateText() {
+            dateButton.text = String.format(
+                Locale.getDefault(),
+                "%04d-%02d-%02d",
+                selectedTime.get(java.util.Calendar.YEAR),
+                selectedTime.get(java.util.Calendar.MONTH) + 1,
+                selectedTime.get(java.util.Calendar.DAY_OF_MONTH)
+            )
+        }
+
+        fun updateTimeText() {
+            val hour = selectedTime.get(java.util.Calendar.HOUR_OF_DAY)
+            val minute = selectedTime.get(java.util.Calendar.MINUTE)
+
+            timeButton.text = String.format(
+                Locale.getDefault(),
+                "%02d:%02d",
+                hour,
+                minute
+            )
+        }
+
+        updateDateText()
+        updateTimeText()
+
+        dateButton.setOnClickListener {
+            DatePickerDialog(
+                this,
+                { _, year, month, day ->
+                    selectedTime.set(
+                        java.util.Calendar.YEAR,
+                        year
+                    )
+                    selectedTime.set(
+                        java.util.Calendar.MONTH,
+                        month
+                    )
+                    selectedTime.set(
+                        java.util.Calendar.DAY_OF_MONTH,
+                        day
+                    )
+                    updateDateText()
+                },
+                selectedTime.get(java.util.Calendar.YEAR),
+                selectedTime.get(java.util.Calendar.MONTH),
+                selectedTime.get(java.util.Calendar.DAY_OF_MONTH)
+            ).show()
+        }
+
+        timeButton.setOnClickListener {
+            TimePickerDialog(
+                this,
+                { _, hour, minute ->
+                    selectedTime.set(
+                        java.util.Calendar.HOUR_OF_DAY,
+                        hour
+                    )
+                    selectedTime.set(
+                        java.util.Calendar.MINUTE,
+                        minute
+                    )
+                    selectedTime.set(
+                        java.util.Calendar.SECOND,
+                        0
+                    )
+                    selectedTime.set(
+                        java.util.Calendar.MILLISECOND,
+                        0
+                    )
+                    updateTimeText()
+                },
+                selectedTime.get(java.util.Calendar.HOUR_OF_DAY),
+                selectedTime.get(java.util.Calendar.MINUTE),
+                true
+            ).show()
+        }
+
+        val dateTimeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        dateTimeRow.addView(
+            dateButton,
+            LinearLayout.LayoutParams(
+                0,
+                dp(48),
+                1f
+            ).apply {
+                topMargin = dp(12)
+                marginEnd = dp(6)
+            }
+        )
+
+        dateTimeRow.addView(
+            timeButton,
+            LinearLayout.LayoutParams(
+                0,
+                dp(48),
+                1f
+            ).apply {
+                topMargin = dp(12)
+                marginStart = dp(6)
+            }
+        )
+
+        root.addView(dateTimeRow)
+
+        val actionButton = TextView(this).apply {
+            text = if (editing == null) {
+                "Schedule"
+            } else {
+                "Save changes"
+            }
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(onPrimaryColor)
+            setPadding(
+                dp(16),
+                dp(12),
+                dp(16),
+                dp(12)
+            )
+            background = GradientDrawable().apply {
+                setColor(primaryColor)
+                cornerRadius = dp(14).toFloat()
+            }
+        }
+
+        actionButton.setOnClickListener {
+            val body = bodyInput.text.toString().trim()
+
+            if (body.isEmpty()) {
+                Toast.makeText(
+                    this,
+                    "Enter a message",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@setOnClickListener
+            }
+
+            if (address.isBlank()) {
+                Toast.makeText(
+                    this,
+                    "No recipient",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@setOnClickListener
+            }
+
+            val scheduledAt = selectedTime.timeInMillis
+
+            if (scheduledAt <= System.currentTimeMillis()) {
+                Toast.makeText(
+                    this,
+                    "Choose a future date and time",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@setOnClickListener
+            }
+
+            if (!ScheduledMessageReceiver.canScheduleExactAlarms(this)) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    try {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
+
+                Toast.makeText(
+                    this,
+                    "Allow exact alarms, then tap Schedule again",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
+
+            if (editing == null) {
+                val id =
+                    System.currentTimeMillis() * 1024L +
+                        java.security.SecureRandom().nextInt(1024)
+
+                val message = ScheduledMessage(
+                    id = id,
+                    threadId = threadId.toString(),
+                    address = address,
+                    body = body,
+                    scheduledAt = scheduledAt
+                )
+
+                ScheduledMessageStore.add(
+                    this,
+                    message
+                )
+                ScheduledMessageReceiver.scheduleAlarm(
+                    this,
+                    message
+                )
+
+                Toast.makeText(
+                    this,
+                    "Message scheduled",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                ScheduledMessageReceiver.cancelAlarm(
+                    this,
+                    editing.id
+                )
+
+                val message = editing.copy(
+                    body = body,
+                    scheduledAt = scheduledAt,
+                    missed = false
+                )
+
+                ScheduledMessageStore.update(
+                    this,
+                    message
+                )
+                ScheduledMessageReceiver.scheduleAlarm(
+                    this,
+                    message
+                )
+
+                Toast.makeText(
+                    this,
+                    "Schedule updated",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+
+            dialog.dismiss()
+        }
+
+        val actionParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(48)
+        ).apply {
+            topMargin = dp(14)
+        }
+        root.addView(actionButton, actionParams)
+
+        val listTitle = TextView(this).apply {
+            text = "Scheduled"
+            textSize = 16f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.rgb(50, 50, 50))
+        }
+
+        root.addView(
+            listTitle,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(18)
+            }
+        )
+
+        val scrollView = ScrollView(this)
+
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val scheduledMessages =
+            ScheduledMessageStore.getForThread(
+                this,
+                threadId.toString(),
+                address
+            )
+
+        if (scheduledMessages.isEmpty()) {
+            list.addView(
+                TextView(this).apply {
+                    text = "No scheduled messages"
+                    textSize = 14f
+                    setTextColor(secondaryText)
+                    setPadding(
+                        0,
+                        dp(12),
+                        0,
+                        dp(12)
+                    )
+                }
+            )
+        } else {
+            val formatter =
+                java.text.SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm",
+                    Locale.getDefault()
+                )
+
+            scheduledMessages.forEach { message ->
+                val item = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(
+                        dp(12),
+                        dp(10),
+                        dp(12),
+                        dp(10)
+                    )
+                    background = GradientDrawable().apply {
+                        setColor(fieldBackground)
+                        cornerRadius = dp(12).toFloat()
+                    }
+                }
+
+                val messageText = TextView(this).apply {
+                    text = if (message.missed) {
+                        "Missed • ${message.body}"
+                    } else {
+                        message.body
+                    }
+                    textSize = 15f
+                    setTextColor(primaryText)
+                }
+
+                item.addView(messageText)
+
+                val dateText = TextView(this).apply {
+                    text = formatter.format(
+                        java.util.Date(message.scheduledAt)
+                    )
+                    textSize = 13f
+                    setTextColor(secondaryText)
+                    setPadding(
+                        0,
+                        dp(5),
+                        0,
+                        0
+                    )
+                }
+
+                item.addView(dateText)
+
+                val buttons = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.END
+                }
+
+                val editButton = TextView(this).apply {
+                    text = "Edit"
+                    textSize = 14f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(primaryColor)
+                    setPadding(
+                        dp(12),
+                        dp(8),
+                        dp(12),
+                        dp(8)
+                    )
+                    setOnClickListener {
+                        dialog.setOnDismissListener {
+                            showScheduledMessagesDialog(message)
+                        }
+                        dialog.dismiss()
+                    }
+                }
+
+                val cancelButton = TextView(this).apply {
+                    text = "Cancel"
+                    textSize = 14f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Color.rgb(190, 40, 40))
+                    setPadding(
+                        dp(12),
+                        dp(8),
+                        dp(12),
+                        dp(8)
+                    )
+                    setOnClickListener {
+                        ScheduledMessageReceiver.cancelAlarm(
+                            this@ConversationActivity,
+                            message.id
+                        )
+                        ScheduledMessageStore.remove(
+                            this@ConversationActivity,
+                            message.id
+                        )
+                        ScheduledMessageNotification.dismiss(
+                            this@ConversationActivity,
+                            message.id
+                        )
+                        dialog.dismiss()
+                        showScheduledMessagesDialog()
+                    }
+                }
+
+                buttons.addView(editButton)
+                buttons.addView(cancelButton)
+                item.addView(buttons)
+
+                list.addView(
+                    item,
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        topMargin = dp(8)
+                    }
+                )
+            }
+        }
+
+        scrollView.addView(list)
+
+        root.addView(
+            scrollView,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            ).apply {
+                topMargin = dp(4)
+            }
+        )
+
+        dialog.setContentView(root)
+        dialog.setCanceledOnTouchOutside(true)
+
+        dialog.setOnShowListener {
+            dialog.window?.setLayout(
+                (resources.displayMetrics.widthPixels * 0.92f).toInt(),
+                (resources.displayMetrics.heightPixels * 0.82f).toInt()
+            )
+        }
+
+        dialog.show()
+
+        dialog.window?.setBackgroundDrawableResource(
+            android.R.color.transparent
+        )
+
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.92f).toInt(),
+            (resources.displayMetrics.heightPixels * 0.82f).toInt()
+        )
+    }
+
     private fun markConversationRead() {
         if (threadId.isBlank()) return
 
@@ -995,6 +2471,7 @@ private fun getContactName(phoneNumber: String): String? {
         null
     }
 }   
+
  private fun dp(value: Int): Int {
         return (
             value * resources.displayMetrics.density
