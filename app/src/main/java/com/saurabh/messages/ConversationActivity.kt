@@ -98,7 +98,19 @@ class ConversationActivity : AppCompatActivity() {
                 0
             )
 
-            composerContainer.translationY = -ime.bottom.toFloat()
+            val composerParams =
+                composerContainer.layoutParams as LinearLayout.LayoutParams
+
+            composerParams.bottomMargin = ime.bottom
+            composerContainer.layoutParams = composerParams
+
+            if (ime.bottom > 0) {
+                messageList.post {
+                    val scrollView =
+                        findViewById<android.widget.ScrollView>(R.id.messageScroll)
+                    scrollView.fullScroll(View.FOCUS_DOWN)
+                }
+            }
 
             insets
         }
