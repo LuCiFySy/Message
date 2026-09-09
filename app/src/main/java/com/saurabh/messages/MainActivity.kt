@@ -310,10 +310,9 @@ class MainActivity : AppCompatActivity() {
 
         if (
             requestCode == PICK_CONTACT_REQUEST &&
-            resultCode == RESULT_OK &&
-            data?.data != null
+            resultCode == RESULT_OK
         ) {
-            val contactUri = data.data!!
+            val contactUri = data?.data ?: return
 
             contentResolver.query(
                 contactUri,
