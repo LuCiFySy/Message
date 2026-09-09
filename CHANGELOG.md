@@ -8,6 +8,27 @@
 - Refined toggle thumb and checkmark sizing.
 - Modernized Swipe Left and Swipe Right action dialogs.
 - Improved Unread and Archived filter chip readability in dark mode.
+- Added View contact / Add to contacts options to the conversation menu.
+- Added Mute / Unmute options to the conversation menu.
+- Added Block / Unblock options to the conversation menu.
+- Added a Blocked contacts section to Settings.
+- Added a scrollable blocked contacts list with contact names and phone numbers.
+
+### Messaging
+- Added scheduled SMS messages.
+- Scheduled messages are restored after device reboot.
+
+### Blocking
+- Added contact blocking.
+- Added options to either block and delete a conversation or block it without deleting messages.
+- Blocked contacts are hidden from the conversation list.
+- Incoming SMS messages from blocked contacts are ignored.
+- Notifications from blocked contacts are suppressed.
+- Added the ability to unblock contacts from Settings.
+
+### Notifications
+- Added conversation mute and unmute support.
+- Muted conversations no longer show message notifications.
 
 ### Fixes
 - Fixed conversations becoming unread when a new message arrives while that conversation is already open.
@@ -15,18 +36,4 @@
 
 ### Build
 - Updated release build to v1.1.0.
-
-## Unreleased
-
-### UI
-- Improved the main conversation screen search experience with a dedicated search mode.
-- Refined the settings screen with a modern delivery reports toggle.
-- Adjusted the toggle thumb and checkmark sizing for a cleaner appearance.
-- Modernized the Swipe Left and Swipe Right action selection dialogs.
-- Improved selected filter chip readability in dark mode.
-
-### Fixes
-- Fixed unread state handling when receiving a message while its conversation is already open.
-- Fixed unread and archived filter labels becoming difficult to read when selected.
-- Added a dedicated dark text color for selected filter chips to keep them readable in dark mode.
 
