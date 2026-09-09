@@ -15,6 +15,7 @@ A simple Android SMS/MMS messaging app.
 - Inline reply from notifications
 - Delivery reports
 - Message notifications
+- Scheduled messages
 - Default SMS app support
 
 ## Requirements
