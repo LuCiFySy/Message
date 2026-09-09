@@ -17,4 +17,5 @@
 
     <color name="ic_launcher_background">#FFFFFF</color>
 
+    <color name="messages_chip_selected_text">#211F26</color>
 </resources>

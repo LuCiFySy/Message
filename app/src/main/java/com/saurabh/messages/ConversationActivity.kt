@@ -74,6 +74,7 @@ class ConversationActivity : AppCompatActivity() {
 
             val changedThreadId = intent.getLongExtra("thread_id", -1L).toString()
             if (changedThreadId == threadId) {
+                markConversationRead()
                 loadMessages()
             }
         }

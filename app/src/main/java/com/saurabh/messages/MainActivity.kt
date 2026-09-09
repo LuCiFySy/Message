@@ -16,6 +16,8 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.View
+import android.view.inputmethod.InputMethodManager
+import android.content.Context
 import android.widget.PopupWindow
 import android.view.ViewGroup
 import android.graphics.drawable.ColorDrawable
@@ -121,6 +123,14 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        findViewById<View>(R.id.searchButton).setOnClickListener {
+            openSearch()
+        }
+
+        findViewById<View>(R.id.searchBack).setOnClickListener {
+            closeSearch()
+        }
+
         findViewById<TextView>(R.id.startChatButton).setOnClickListener {
             val intent = Intent(
                 Intent.ACTION_PICK,
@@ -162,7 +172,7 @@ class MainActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.unreadChip).setTextColor(
                 ContextCompat.getColor(
                     this,
-                    if (showUnreadOnly) R.color.messages_text_primary
+                    if (showUnreadOnly) R.color.messages_chip_selected_text
                     else R.color.messages_text_secondary
                 )
             )
@@ -181,7 +191,7 @@ class MainActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.archivedChip).setTextColor(
                 ContextCompat.getColor(
                     this,
-                    if (showArchivedOnly) R.color.messages_text_primary
+                    if (showArchivedOnly) R.color.messages_chip_selected_text
                     else R.color.messages_text_secondary
                 )
             )
@@ -229,6 +239,42 @@ class MainActivity : AppCompatActivity() {
         if (::conversationList.isInitialized) {
             checkSmsAccess()
         }
+    }
+
+    private fun openSearch() {
+        findViewById<View>(R.id.mainTopBar).visibility = View.GONE
+        findViewById<View>(R.id.greetingText).visibility = View.GONE
+        findViewById<View>(R.id.searchContainer).visibility = View.VISIBLE
+        findViewById<View>(R.id.filterContainer).visibility = View.GONE
+
+        searchInput.requestFocus()
+
+        val inputMethodManager =
+            getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+
+        inputMethodManager.showSoftInput(
+            searchInput,
+            InputMethodManager.SHOW_IMPLICIT
+        )
+    }
+
+    private fun closeSearch() {
+        searchInput.text.clear()
+
+        val inputMethodManager =
+            getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+
+        inputMethodManager.hideSoftInputFromWindow(
+            searchInput.windowToken,
+            0
+        )
+
+        findViewById<View>(R.id.searchContainer).visibility = View.GONE
+        findViewById<View>(R.id.mainTopBar).visibility = View.VISIBLE
+        findViewById<View>(R.id.greetingText).visibility = View.VISIBLE
+        findViewById<View>(R.id.filterContainer).visibility = View.VISIBLE
+
+        loadConversations()
     }
 
     private fun checkSmsAccess() {
@@ -593,7 +639,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.selectionToolbar).visibility = View.GONE
         findViewById<View>(R.id.mainTopBar).visibility = View.VISIBLE
         findViewById<View>(R.id.greetingText).visibility = View.VISIBLE
-        findViewById<View>(R.id.searchContainer).visibility = View.VISIBLE
+        findViewById<View>(R.id.searchContainer).visibility = View.GONE
         findViewById<View>(R.id.filterContainer).visibility = View.VISIBLE
 
         loadConversations(searchInput.text.toString().trim())

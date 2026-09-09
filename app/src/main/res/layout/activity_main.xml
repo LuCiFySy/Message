@@ -133,7 +133,19 @@
             android:background="@drawable/bg_search"
             android:gravity="center_vertical"
             android:paddingStart="16dp"
-            android:paddingEnd="16dp">
+            android:paddingEnd="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/searchBack"
+                android:layout_width="40dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="‹"
+                android:textColor="@color/messages_text_primary"
+                android:textSize="32sp"
+                android:clickable="true"
+                android:focusable="true" />
 
             <ImageView
                 android:layout_width="22dp"

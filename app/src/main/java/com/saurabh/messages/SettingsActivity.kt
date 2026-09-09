@@ -1,6 +1,5 @@
 package com.saurabh.messages
 
-import android.app.AlertDialog
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.LinearLayout
@@ -205,9 +204,10 @@ class SettingsActivity : AppCompatActivity() {
         textContainer.addView(titleView)
         textContainer.addView(summaryView)
 
-        val switch = android.widget.Switch(this).apply {
-            isChecked = checked
-            setOnCheckedChangeListener { _, enabled ->
+        val switch = ModernToggleView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(24))
+            setChecked(checked)
+            setOnCheckedChangeListener { enabled ->
                 onChanged(enabled)
             }
         }
@@ -304,27 +304,127 @@ class SettingsActivity : AppCompatActivity() {
             val selectedIndex =
                 if (current == SWIPE_ACTION_DELETE) 0 else 1
 
-            AlertDialog.Builder(this)
-                .setTitle(title)
-                .setSingleChoiceItems(
-                    arrayOf("Delete", "Archive"),
-                    selectedIndex
-                ) { dialog, which ->
-                    val action =
-                        if (which == 0) {
-                            SWIPE_ACTION_DELETE
-                        } else {
-                            SWIPE_ACTION_ARCHIVE
-                        }
+            val dialog = android.app.Dialog(this)
 
-                    prefs.edit()
-                        .putString(preferenceKey, action)
-                        .apply()
-
-                    updateValue()
-                    dialog.dismiss()
+            val container = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(24), dp(20), dp(24), dp(12))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(
+                        ContextCompat.getColor(
+                            this@SettingsActivity,
+                            R.color.messages_surface
+                        )
+                    )
+                    cornerRadius = dp(28).toFloat()
                 }
-                .show()
+            }
+
+            val dialogTitle = TextView(this).apply {
+                text = title
+                textSize = 20f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@SettingsActivity,
+                        R.color.messages_text_primary
+                    )
+                )
+                setPadding(0, 0, 0, dp(12))
+            }
+
+            container.addView(dialogTitle)
+
+            fun addChoice(label: String, value: String, selected: Boolean) {
+                val choice = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    minimumHeight = dp(52)
+                    setPadding(dp(4), 0, dp(4), 0)
+                    isClickable = true
+                    isFocusable = true
+
+                    setOnClickListener {
+                        prefs.edit()
+                            .putString(preferenceKey, value)
+                            .apply()
+
+                        updateValue()
+                        dialog.dismiss()
+                    }
+                }
+
+                val indicator = TextView(this).apply {
+                    text = if (selected) "●" else "○"
+                    textSize = 22f
+                    gravity = Gravity.CENTER
+                    setTextColor(
+                        ContextCompat.getColor(
+                            this@SettingsActivity,
+                            if (selected) {
+                                R.color.messages_primary
+                            } else {
+                                R.color.messages_text_secondary
+                            }
+                        )
+                    )
+                    layoutParams = LinearLayout.LayoutParams(
+                        dp(40),
+                        dp(48)
+                    )
+                }
+
+                val labelView = TextView(this).apply {
+                    text = label
+                    textSize = 16f
+                    gravity = Gravity.CENTER_VERTICAL
+                    setTextColor(
+                        ContextCompat.getColor(
+                            this@SettingsActivity,
+                            R.color.messages_text_primary
+                        )
+                    )
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        dp(48),
+                        1f
+                    )
+                }
+
+                choice.addView(indicator)
+                choice.addView(labelView)
+                container.addView(choice)
+            }
+
+            addChoice(
+                "Delete",
+                SWIPE_ACTION_DELETE,
+                selectedIndex == 0
+            )
+
+            addChoice(
+                "Archive",
+                SWIPE_ACTION_ARCHIVE,
+                selectedIndex == 1
+            )
+
+            dialog.setContentView(container)
+
+            dialog.window?.setBackgroundDrawableResource(
+                android.R.color.transparent
+            )
+
+            dialog.window?.setLayout(
+                dp(320),
+                android.view.WindowManager.LayoutParams.WRAP_CONTENT
+            )
+
+            dialog.show()
+
+            dialog.window?.setLayout(
+                dp(320),
+                android.view.WindowManager.LayoutParams.WRAP_CONTENT
+            )
         }
 
         row.addView(textContainer)
