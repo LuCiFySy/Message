@@ -5,6 +5,7 @@ A simple Android SMS/MMS messaging app.
 ## Features
 
 - SMS and MMS messaging
+- Scheduled messaging 
 - Conversation search
 - Contact picker
 - Archive conversations
@@ -15,7 +16,6 @@ A simple Android SMS/MMS messaging app.
 - Inline reply from notifications
 - Delivery reports
 - Message notifications
-- Scheduled messages
 - Default SMS app support
 
 ## Requirements
