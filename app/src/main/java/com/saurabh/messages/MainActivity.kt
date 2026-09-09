@@ -24,6 +24,7 @@ import android.graphics.Color
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -38,9 +39,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val SMS_PERMISSION_REQUEST = 100
         private const val CONTACTS_PERMISSION_REQUEST = 101
-        private const val SMS_ROLE_REQUEST = 101
         private const val NOTIFICATION_PERMISSION_REQUEST = 102
-        private const val PICK_CONTACT_REQUEST = 103
     }
 
     private lateinit var conversationList: LinearLayout
@@ -51,6 +50,51 @@ class MainActivity : AppCompatActivity() {
     private val selectedThreadIds = LinkedHashSet<String>()
 
     private val contactNameCache = HashMap<String, String?>()
+
+    private val smsRoleLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            checkSmsAccess()
+        }
+
+    private val contactPickerLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode != RESULT_OK) return@registerForActivityResult
+
+            val contactUri = result.data?.data ?: return@registerForActivityResult
+
+            contentResolver.query(
+                contactUri,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val numberIndex = cursor.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    )
+
+                    if (numberIndex >= 0) {
+                        val address = cursor.getString(numberIndex)?.trim()
+
+                        if (!address.isNullOrBlank()) {
+                            val threadId =
+                                Telephony.Threads.getOrCreateThreadId(this, address)
+
+                            val intent = Intent(
+                                this,
+                                ConversationActivity::class.java
+                            ).apply {
+                                putExtra("thread_id", threadId.toString())
+                                putExtra("address", address)
+                            }
+
+                            startActivity(intent)
+                        }
+                    }
+                }
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +126,7 @@ class MainActivity : AppCompatActivity() {
                 Intent.ACTION_PICK,
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI
             )
-            startActivityForResult(intent, PICK_CONTACT_REQUEST)
+            contactPickerLauncher.launch(intent)
         }
 
         searchInput.addTextChangedListener(object : TextWatcher {
@@ -228,7 +272,7 @@ class MainActivity : AppCompatActivity() {
                 val intent = roleManager.createRequestRoleIntent(
                     RoleManager.ROLE_SMS
                 )
-                startActivityForResult(intent, SMS_ROLE_REQUEST)
+                smsRoleLauncher.launch(intent)
             }
         } else {
             @Suppress("DEPRECATION")
@@ -238,7 +282,7 @@ class MainActivity : AppCompatActivity() {
                     packageName
                 )
             }
-            startActivityForResult(intent, SMS_ROLE_REQUEST)
+            smsRoleLauncher.launch(intent)
         }
     }
 
@@ -294,59 +338,6 @@ class MainActivity : AppCompatActivity() {
             arrayOf(Manifest.permission.READ_CONTACTS),
             CONTACTS_PERMISSION_REQUEST
         )
-    }
-
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?
-    ) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == SMS_ROLE_REQUEST) {
-            checkSmsAccess()
-            return
-        }
-
-        if (
-            requestCode == PICK_CONTACT_REQUEST &&
-            resultCode == RESULT_OK
-        ) {
-            val contactUri = data?.data ?: return
-
-            contentResolver.query(
-                contactUri,
-                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val numberIndex = cursor.getColumnIndex(
-                        ContactsContract.CommonDataKinds.Phone.NUMBER
-                    )
-
-                    if (numberIndex >= 0) {
-                        val address = cursor.getString(numberIndex)?.trim()
-
-                        if (!address.isNullOrBlank()) {
-                            val threadId =
-                                Telephony.Threads.getOrCreateThreadId(this, address)
-
-                            val intent = Intent(
-                                this,
-                                ConversationActivity::class.java
-                            ).apply {
-                                putExtra("thread_id", threadId.toString())
-                                putExtra("address", address)
-                            }
-
-                            startActivity(intent)
-                        }
-                    }
-                }
-            }
-        }
     }
 
     override fun onRequestPermissionsResult(
