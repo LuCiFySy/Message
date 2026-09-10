@@ -57,33 +57,15 @@ class SettingsActivity : AppCompatActivity() {
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(16), 0)
+            setPadding(dp(24), 0, dp(16), 0)
         }
-
-        val back = TextView(this).apply {
-            text = "‹"
-            textSize = 38f
-            gravity = Gravity.CENTER
-            setTextColor(
-                ContextCompat.getColor(
-                    this@SettingsActivity,
-                    R.color.messages_text_primary
-                )
-            )
-            setOnClickListener {
-                finish()
-            }
-        }
-
-        topBar.addView(
-            back,
-            LinearLayout.LayoutParams(dp(48), dp(56))
-        )
 
         val title = TextView(this).apply {
             text = "Settings"
-            textSize = 20f
+            textSize = 28f
             typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER_VERTICAL
+            translationY = dp(4).toFloat()
             setTextColor(
                 ContextCompat.getColor(
                     this@SettingsActivity,
