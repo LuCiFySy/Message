@@ -870,6 +870,10 @@ class MainActivity : AppCompatActivity() {
 
             Thread {
                 try {
+                    NotificationHelper.cancelThreadNotifications(
+                        this@MainActivity,
+                        threadId.toLong()
+                    )
                     contentResolver.delete(
                         Telephony.Sms.CONTENT_URI,
                         "${Telephony.Sms.THREAD_ID}=?",
@@ -1029,6 +1033,10 @@ class MainActivity : AppCompatActivity() {
             Thread {
                 threads.forEach { threadId ->
                     try {
+                        NotificationHelper.cancelThreadNotifications(
+                            this@MainActivity,
+                            threadId.toLong()
+                        )
                         contentResolver.delete(
                             Telephony.Sms.CONTENT_URI,
                             "${Telephony.Sms.THREAD_ID}=?",

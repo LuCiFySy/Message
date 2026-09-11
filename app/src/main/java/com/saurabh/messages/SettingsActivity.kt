@@ -623,29 +623,149 @@ class SettingsActivity : AppCompatActivity() {
             if (left) SWIPE_ACTION_DELETE else SWIPE_ACTION_ARCHIVE
         )
 
-        val options = arrayOf("Delete", "Archive")
-        val checked = if (current == SWIPE_ACTION_DELETE) 0 else 1
+        val dialog = android.app.Dialog(this)
 
-        AlertDialog.Builder(this)
-            .setTitle(if (left) "Swipe left" else "Swipe right")
-            .setSingleChoiceItems(options, checked) { dialog, which ->
-                val value = if (which == 0) {
-                    SWIPE_ACTION_DELETE
-                } else {
-                    SWIPE_ACTION_ARCHIVE
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                dp(8),
+                dp(8),
+                dp(8),
+                dp(8)
+            )
+
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dp(20).toFloat()
+                setColor(
+                    ContextCompat.getColor(
+                        this@SettingsActivity,
+                        R.color.messages_surface_variant
+                    )
+                )
+            }
+        }
+
+        val title = TextView(this).apply {
+            text = if (left) "Swipe left" else "Swipe right"
+            textSize = 20f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(
+                ContextCompat.getColor(
+                    this@SettingsActivity,
+                    R.color.messages_text_primary
+                )
+            )
+            setPadding(
+                dp(16),
+                dp(12),
+                dp(16),
+                dp(8)
+            )
+        }
+
+        root.addView(title)
+
+        fun addOption(label: String, value: String) {
+            val selected = current == value
+
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(
+                    dp(16),
+                    dp(6),
+                    dp(16),
+                    dp(6)
+                )
+                isClickable = true
+                isFocusable = true
+
+                val radio = android.widget.ImageView(this@SettingsActivity).apply {
+                    setImageResource(
+                        if (selected) {
+                            R.drawable.ic_sim_radio_selected
+                        } else {
+                            R.drawable.ic_sim_radio_unselected
+                        }
+                    )
+
+                    layoutParams = LinearLayout.LayoutParams(
+                        dp(24),
+                        dp(24)
+                    )
                 }
 
-                prefs.edit()
-                    .putString(
-                        if (left) PREF_SWIPE_LEFT else PREF_SWIPE_RIGHT,
-                        value
+                val text = TextView(this@SettingsActivity).apply {
+                    this.text = label
+                    textSize = 16f
+                    gravity = Gravity.CENTER_VERTICAL
+                    setTextColor(
+                        ContextCompat.getColor(
+                            this@SettingsActivity,
+                            R.color.messages_text_primary
+                        )
                     )
-                    .apply()
+                    setPadding(
+                        dp(14),
+                        0,
+                        0,
+                        0
+                    )
+                }
 
-                dialog.dismiss()
-                recreate()
+                addView(radio)
+                addView(
+                    text,
+                    LinearLayout.LayoutParams(
+                        0,
+                        dp(52),
+                        1f
+                    )
+                )
+
+                setOnClickListener {
+                    prefs.edit()
+                        .putString(
+                            if (left) PREF_SWIPE_LEFT else PREF_SWIPE_RIGHT,
+                            value
+                        )
+                        .apply()
+
+                    dialog.dismiss()
+                    recreate()
+                }
             }
-            .show()
+
+            root.addView(row)
+        }
+
+        addOption("Delete", SWIPE_ACTION_DELETE)
+        addOption("Archive", SWIPE_ACTION_ARCHIVE)
+
+        dialog.setContentView(root)
+
+        dialog.window?.setBackgroundDrawableResource(
+            android.R.color.transparent
+        )
+
+        dialog.window?.setLayout(
+            minOf(
+                dp(360),
+                resources.displayMetrics.widthPixels - dp(32)
+            ),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+
+        dialog.show()
+
+        dialog.window?.setLayout(
+            minOf(
+                dp(360),
+                resources.displayMetrics.widthPixels - dp(32)
+            ),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        )
     }
 
     private fun dp(value: Int): Int {

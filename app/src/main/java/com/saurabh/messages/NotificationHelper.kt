@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.ContactsContract
+import android.provider.Telephony
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.RemoteInput
@@ -31,6 +32,32 @@ object NotificationHelper {
     const val ACTION_COPY_OTP =
         "com.saurabh.messages.ACTION_COPY_OTP"
 
+
+    fun cancelMessageNotification(context: Context, messageId: Long) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.cancel(messageId.toInt())
+    }
+    fun cancelThreadNotifications(context: Context, threadId: Long) {
+        val projection = arrayOf(Telephony.Sms._ID)
+
+        try {
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                projection,
+                "${Telephony.Sms.THREAD_ID}=?",
+                arrayOf(threadId.toString()),
+                null
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
+                val manager = context.getSystemService(NotificationManager::class.java)
+
+                while (cursor.moveToNext()) {
+                    manager.cancel(cursor.getLong(idIndex).toInt())
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -352,6 +379,7 @@ object NotificationHelper {
             NotificationManager::class.java
         )
 
+        android.util.Log.d("NotificationHelper", "POST notification id=$messageId address=$address")
         manager.notify(messageId.toInt(), notification)
     }
 }

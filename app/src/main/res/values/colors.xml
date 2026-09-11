@@ -6,6 +6,11 @@
     <color name="messages_surface_variant">#EEEAF3</color>
 
     <color name="messages_primary">#6750A4</color>
+
+    <!-- Conversation message colors -->
+    <color name="messages_outgoing_bubble">#B8C8FF</color>
+    <color name="messages_link">#1565C0</color>
+    <color name="messages_outgoing_link">#E3F2FD</color>
     <color name="messages_on_primary">#FFFFFF</color>
 
     <color name="messages_text_primary">#211F26</color>

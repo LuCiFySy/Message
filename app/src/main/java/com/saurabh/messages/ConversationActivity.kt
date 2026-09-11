@@ -1,6 +1,11 @@
 package com.saurabh.messages
 import android.text.TextWatcher
 import android.text.Editable
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.ClickableSpan
+import android.text.method.LinkMovementMethod
+import android.text.util.Linkify
 import android.graphics.Typeface
 import android.widget.ImageView
 import android.widget.FrameLayout
@@ -19,7 +24,10 @@ import android.os.Bundle
 import android.view.View
 import android.graphics.drawable.GradientDrawable
 import android.telephony.SmsManager
+import android.telephony.SubscriptionInfo
+import android.telephony.SubscriptionManager
 import android.view.Gravity
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.LinearLayout
@@ -54,6 +62,11 @@ class ConversationActivity : AppCompatActivity() {
     private lateinit var attachmentPreview: LinearLayout
     private lateinit var attachmentPreviewScroll: View
 
+    private var selectedSubscriptionId =
+        SubscriptionManager.INVALID_SUBSCRIPTION_ID
+
+    private var availableSubscriptions: List<SubscriptionInfo> = emptyList()
+
     private val selectedAttachments = mutableListOf<Uri>()
 
     private val attachmentPicker =
@@ -70,6 +83,7 @@ class ConversationActivity : AppCompatActivity() {
         }
 
     private var selectionMode = false
+    private lateinit var popupWindow: PopupWindow
     private val selectedMessageIds = LinkedHashSet<Long>()
     private val selectedMessageBodies = LinkedHashMap<Long, String>()
 
@@ -199,9 +213,22 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             )
         }
 
-        findViewById<View>(R.id.sendButton).setOnClickListener {
+        val sendButton = findViewById<View>(R.id.sendButton)
+
+        sendButton.setOnClickListener {
             sendMessage()
         }
+
+        sendButton.setOnLongClickListener {
+            if (availableSubscriptions.size > 1) {
+                showSimPicker(sendButton)
+                true
+            } else {
+                false
+            }
+        }
+
+        refreshSimSelector()
 
         markConversationRead()
         loadMessages()
@@ -1178,6 +1205,130 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
     }
 
+    private fun resendSms(
+        messageId: Long,
+        body: String,
+        recipient: String
+    ) {
+        if (
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.SEND_SMS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.SEND_SMS),
+                SEND_SMS_REQUEST
+            )
+            return
+        }
+
+        try {
+            val smsManager =
+                if (
+                    selectedSubscriptionId !=
+                        SubscriptionManager.INVALID_SUBSCRIPTION_ID
+                ) {
+                    SmsManager.getSmsManagerForSubscriptionId(
+                        selectedSubscriptionId
+                    )
+                } else {
+                    SmsManager.getDefault()
+                }
+
+            val values = ContentValues().apply {
+                put(
+                    Telephony.Sms.TYPE,
+                    Telephony.Sms.MESSAGE_TYPE_OUTBOX
+                )
+                put(
+                    Telephony.TextBasedSmsColumns.STATUS,
+                    Telephony.TextBasedSmsColumns.STATUS_PENDING
+                )
+                put(
+                    Telephony.Sms.DATE,
+                    System.currentTimeMillis()
+                )
+            }
+
+            val updated = contentResolver.update(
+                Telephony.Sms.CONTENT_URI,
+                values,
+                "${Telephony.Sms._ID}=?",
+                arrayOf(messageId.toString())
+            )
+
+            if (updated <= 0) {
+                Toast.makeText(
+                    this,
+                    "Unable to resend message",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+
+            val requestCode =
+                (System.currentTimeMillis() and 0x7fffffff).toInt()
+
+            val sentIntent =
+                Intent(this, SmsStatusReceiver::class.java).apply {
+                    action = SmsStatusReceiver.ACTION_SMS_SENT
+                    putExtra("message_id", messageId)
+                }
+
+            val deliveryIntent =
+                Intent(this, SmsStatusReceiver::class.java).apply {
+                    action = SmsStatusReceiver.ACTION_SMS_DELIVERED
+                    putExtra("message_id", messageId)
+                }
+
+            val sentPendingIntent =
+                android.app.PendingIntent.getBroadcast(
+                    this,
+                    requestCode,
+                    sentIntent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                        android.app.PendingIntent.FLAG_IMMUTABLE
+                )
+
+            val deliveryPendingIntent =
+                if (
+                    getSharedPreferences(
+                        "messages_settings",
+                        MODE_PRIVATE
+                    ).getBoolean("delivery_reports", true)
+                ) {
+                    android.app.PendingIntent.getBroadcast(
+                        this,
+                        requestCode + 1,
+                        deliveryIntent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                            android.app.PendingIntent.FLAG_IMMUTABLE
+                    )
+                } else {
+                    null
+                }
+
+            smsManager.sendTextMessage(
+                recipient,
+                null,
+                body,
+                sentPendingIntent,
+                deliveryPendingIntent
+            )
+
+            loadMessages()
+
+        } catch (_: Exception) {
+            Toast.makeText(
+                this,
+                "Failed to send message",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     private fun addMessageBubble(
         messageId: Long,
         body: String,
@@ -1188,7 +1339,8 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
     ) {
         val outgoing =
             type == Telephony.Sms.MESSAGE_TYPE_SENT ||
-            type == Telephony.Sms.MESSAGE_TYPE_OUTBOX
+            type == Telephony.Sms.MESSAGE_TYPE_OUTBOX ||
+            type == Telephony.Sms.MESSAGE_TYPE_FAILED
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1197,9 +1349,22 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
 
         val bubble = TextView(this).apply {
-            text = body
-            textSize = 16f
-            setTextColor(ContextCompat.getColor(this@ConversationActivity, if (outgoing) R.color.messages_on_primary else R.color.messages_text_primary))
+            text = buildInteractiveMessageText(body, messageId)
+            textSize = if (isEmojiOnlyMessage(body)) 30f else 16f
+            movementMethod = LinkMovementMethod.getInstance()
+            linksClickable = true
+            setTextIsSelectable(false)
+            setTextColor(
+                ContextCompat.getColor(
+                    this@ConversationActivity,
+                    if (outgoing) {
+                        android.R.color.black
+                    } else {
+                        R.color.messages_text_primary
+                    }
+                )
+            )
+
             setPadding(
                 dp(17),
                 dp(11),
@@ -1213,7 +1378,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                 cornerRadius = dp(20).toFloat()
 
                 if (outgoing) {
-                    setColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_primary))
+                    setColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_outgoing_bubble))
                 } else {
                     setColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_surface_variant))
                 }
@@ -1237,7 +1402,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                     setColor(
                         ContextCompat.getColor(
                             this@ConversationActivity,
-                            R.color.messages_primary
+                            R.color.messages_outgoing_bubble
                         )
                     )
                 } else {
@@ -1253,10 +1418,8 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             bubble.setTextColor(
                 ContextCompat.getColor(
                     this@ConversationActivity,
-                    if (selected) {
-                        R.color.messages_text_primary
-                    } else if (outgoing) {
-                        R.color.messages_on_primary
+                    if (outgoing) {
+                        android.R.color.black
                     } else {
                         R.color.messages_text_primary
                     }
@@ -1279,21 +1442,8 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
 
         bubble.setOnClickListener {
-            if (!selectionMode) return@setOnClickListener
-
-            if (selectedMessageIds.contains(messageId)) {
-                selectedMessageIds.remove(messageId)
-                selectedMessageBodies.remove(messageId)
-            } else {
-                selectedMessageIds.add(messageId)
-                selectedMessageBodies[messageId] = body
-            }
-
-            if (selectedMessageIds.isEmpty()) {
-                exitSelectionMode()
-            } else {
-                updateSelectionToolbar()
-                updateBubbleSelection()
+            if (selectionMode) {
+                toggleMessageSelection(messageId, body)
             }
         }
 
@@ -1301,22 +1451,112 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             updateBubbleSelection()
         }
 
-        val time = TextView(this).apply {
-            val statusText = when {
-                !outgoing -> ""
-                status == Telephony.TextBasedSmsColumns.STATUS_COMPLETE -> "✓✓ "
-                status == Telephony.TextBasedSmsColumns.STATUS_FAILED -> "! "
-                else -> "✓ "
-            }
-
-            text = statusText + formatMessageTime(date)
-            textSize = 10.5f
-            setTextColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_text_hint))
+        val time = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(
                 dp(6),
                 dp(3),
                 dp(6),
                 0
+            )
+
+            val statusText = when {
+                !outgoing -> ""
+                status == Telephony.TextBasedSmsColumns.STATUS_COMPLETE -> "✓✓"
+                status == Telephony.TextBasedSmsColumns.STATUS_FAILED -> ""
+                else -> "✓"
+            }
+
+            val statusView = TextView(this@ConversationActivity).apply {
+                text = statusText
+                textSize = if (
+                    status == Telephony.TextBasedSmsColumns.STATUS_FAILED
+                ) {
+                    16f
+                } else {
+                    10.5f
+                }
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+
+                if (
+                    status == Telephony.TextBasedSmsColumns.STATUS_FAILED
+                ) {
+                    setCompoundDrawablesWithIntrinsicBounds(
+                        R.drawable.ic_failed,
+                        0,
+                        0,
+                        0
+                    )
+                    setTextColor(
+                        android.graphics.Color.parseColor("#EF6C6C")
+                    )
+                } else {
+                    setTextColor(
+                        ContextCompat.getColor(
+                            this@ConversationActivity,
+                            R.color.messages_text_hint
+                        )
+                    )
+                }
+            }
+
+            addView(
+                statusView,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    dp(24)
+                )
+            )
+
+            if (
+                outgoing &&
+                status == Telephony.TextBasedSmsColumns.STATUS_FAILED
+            ) {
+                val resendView = android.widget.ImageButton(this@ConversationActivity).apply {
+                    setImageResource(R.drawable.ic_resend)
+                    background = null
+                    scaleType = android.widget.ImageView.ScaleType.CENTER
+                    setPadding(0, 0, 0, 0)
+                    isClickable = true
+                    isFocusable = true
+                    contentDescription = "Resend"
+                    setOnClickListener {
+                        resendSms(
+                            messageId,
+                            body,
+                            messageAddress
+                        )
+                    }
+                }
+
+                addView(
+                    resendView,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        dp(24)
+                    )
+                )
+            }
+
+            val timeView = TextView(this@ConversationActivity).apply {
+                text = formatMessageTime(date)
+                textSize = 10.5f
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_text_hint
+                    )
+                )
+            }
+
+            addView(
+                timeView,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
             )
         }
 
@@ -1348,6 +1588,365 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
+        )
+    }
+
+    private fun isEmojiOnlyMessage(value: String): Boolean {
+        val text = value.trim()
+        if (text.isEmpty()) return false
+
+        var hasEmoji = false
+        var index = 0
+
+        while (index < text.length) {
+            val codePoint = text.codePointAt(index)
+            val charCount = Character.charCount(codePoint)
+
+            when {
+                Character.isWhitespace(codePoint) -> Unit
+
+                codePoint in 0x1F000..0x1FAFF ||
+                codePoint in 0x2600..0x27BF ||
+                codePoint in 0x2300..0x23FF -> {
+                    hasEmoji = true
+                }
+
+                codePoint == 0xFE0F ||
+                codePoint == 0x200D ||
+                codePoint in 0x1F3FB..0x1F3FF ||
+                codePoint == 0x20E3 -> Unit
+
+                else -> return false
+            }
+
+            index += charCount
+        }
+
+        return hasEmoji
+    }
+
+    private fun buildInteractiveMessageText(
+        body: String,
+        messageId: Long
+    ): Spannable {
+        val text = SpannableString(body)
+
+        // Detect web URLs and phone numbers first.
+        Linkify.addLinks(
+            text,
+            Linkify.WEB_URLS or Linkify.PHONE_NUMBERS
+        )
+
+        // Replace Android's direct URL/phone actions with our own
+        // contextual action menus.
+        val urlSpans = text.getSpans(
+            0,
+            text.length,
+            android.text.style.URLSpan::class.java
+        )
+
+        for (urlSpan in urlSpans) {
+            val start = text.getSpanStart(urlSpan)
+            val end = text.getSpanEnd(urlSpan)
+
+            if (start < 0 || end <= start) {
+                continue
+            }
+
+            val url = urlSpan.url
+            val displayValue = body.substring(start, end)
+
+            text.removeSpan(urlSpan)
+
+            text.setSpan(
+                object : ClickableSpan() {
+                    override fun updateDrawState(ds: android.text.TextPaint) {
+                        ds.isUnderlineText = true
+                    }
+
+                    override fun onClick(widget: View) {
+                        if (selectionMode) {
+                            toggleMessageSelection(messageId, body)
+                            return
+                        }
+
+                        if (url.startsWith("tel:", ignoreCase = true)) {
+                            showPhoneActionMenu(
+                                widget,
+                                url.removePrefix("tel:"),
+                                displayValue
+                            )
+                        } else {
+                            showUrlActionMenu(
+                                widget,
+                                url,
+                                displayValue
+                            )
+                        }
+                    }
+                },
+                start,
+                end,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+
+        // Detect OTP/passcode-like numbers only when the surrounding
+        // message gives a strong indication that the number is an OTP.
+        val otpKeywords = Regex(
+            """(?i)\b(?:otp|one[- ]time password|verification code|passcode|security code|authentication code)\b"""
+        )
+        val numberRegex = Regex("""\b\d{4,8}\b""")
+
+        for (match in numberRegex.findAll(body)) {
+            val start = match.range.first
+            val end = match.range.last + 1
+
+            val contextStart = maxOf(0, start - 50)
+            val contextEnd = minOf(body.length, end + 50)
+            val context = body.substring(contextStart, contextEnd)
+
+            if (!otpKeywords.containsMatchIn(context)) {
+                continue
+            }
+
+            // Don't replace an existing URL/phone span.
+            val existingSpans = text.getSpans(
+                start,
+                end,
+                Any::class.java
+            )
+
+            if (existingSpans.isNotEmpty()) {
+                continue
+            }
+
+            val otp = match.value
+
+            text.setSpan(
+                object : ClickableSpan() {
+                    override fun updateDrawState(ds: android.text.TextPaint) {
+                        ds.isUnderlineText = true
+                    }
+
+                    override fun onClick(widget: View) {
+                        if (selectionMode) {
+                            toggleMessageSelection(messageId, body)
+                            return
+                        }
+
+                        showOtpActionMenu(widget, otp)
+                    }
+                },
+                start,
+                end,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+
+        return text
+    }
+
+    private fun toggleMessageSelection(messageId: Long, body: String) {
+        if (!selectionMode) {
+            selectionMode = true
+            selectedMessageIds.clear()
+            selectedMessageBodies.clear()
+        }
+
+        if (selectedMessageIds.contains(messageId)) {
+            selectedMessageIds.remove(messageId)
+            selectedMessageBodies.remove(messageId)
+        } else {
+            selectedMessageIds.add(messageId)
+            selectedMessageBodies[messageId] = body
+        }
+
+        if (selectedMessageIds.isEmpty()) {
+            exitSelectionMode()
+        } else {
+            updateSelectionToolbar()
+            loadMessages()
+        }
+    }
+
+    private fun showPhoneActionMenu(
+        anchor: View,
+        phoneNumber: String,
+        displayValue: String
+    ) {
+        showMessageActionPopup(
+            anchor,
+            listOf(
+                "Call" to {
+                    val intent = Intent(
+                        Intent.ACTION_DIAL,
+                        Uri.parse("tel:${Uri.encode(phoneNumber)}")
+                    )
+                    startActivity(intent)
+                },
+                "Copy" to {
+                    copyMessageActionValue("Phone number", displayValue)
+                }
+            )
+        )
+    }
+
+    private fun showUrlActionMenu(
+        anchor: View,
+        url: String,
+        displayValue: String
+    ) {
+        showMessageActionPopup(
+            anchor,
+            listOf(
+                "Open" to {
+                    val openUrl =
+                        if (
+                            url.startsWith("http://", ignoreCase = true) ||
+                            url.startsWith("https://", ignoreCase = true)
+                        ) {
+                            url
+                        } else {
+                            "https://$url"
+                        }
+
+                    startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse(openUrl)
+                        )
+                    )
+                },
+                "Copy" to {
+                    copyMessageActionValue("URL", displayValue)
+                }
+            )
+        )
+    }
+
+    private fun showOtpActionMenu(
+        anchor: View,
+        otp: String
+    ) {
+        showMessageActionPopup(
+            anchor,
+            listOf(
+                "Copy" to {
+                    copyMessageActionValue("OTP", otp)
+                }
+            )
+        )
+    }
+
+    private fun copyMessageActionValue(
+        label: String,
+        value: String
+    ) {
+        val clipboard =
+            getSystemService(
+                android.content.Context.CLIPBOARD_SERVICE
+            ) as android.content.ClipboardManager
+
+        clipboard.setPrimaryClip(
+            android.content.ClipData.newPlainText(
+                label,
+                value
+            )
+        )
+
+        Toast.makeText(
+            this@ConversationActivity,
+            "$label copied",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun showMessageActionPopup(
+        anchor: View,
+        actions: List<Pair<String, () -> Unit>>
+    ) {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(
+                dp(6),
+                dp(6),
+                dp(6),
+                dp(6)
+            )
+
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_surface
+                    )
+                )
+            }
+
+            elevation = dp(8).toFloat()
+        }
+
+        actions.forEach { (label, action) ->
+            val button = TextView(this).apply {
+                text = label
+                textSize = 14f
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_text_primary
+                    )
+                )
+                gravity = Gravity.CENTER
+                setPadding(
+                    dp(14),
+                    dp(10),
+                    dp(14),
+                    dp(10)
+                )
+                isClickable = true
+                isFocusable = true
+
+                setOnClickListener {
+                    action()
+                    popupWindow.dismiss()
+                }
+            }
+
+            content.addView(
+                button,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        popupWindow = PopupWindow(
+            content,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = dp(8).toFloat()
+            setBackgroundDrawable(
+                GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(
+                        ContextCompat.getColor(
+                            this@ConversationActivity,
+                            R.color.messages_surface
+                        )
+                    )
+                }
+            )
+        }
+
+        popupWindow.showAsDropDown(
+            anchor,
+            0,
+            -anchor.height - dp(8)
         )
     }
 
@@ -1506,6 +2105,10 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
 
                 Thread {
                     for (id in ids) {
+                        NotificationHelper.cancelMessageNotification(
+                            this@ConversationActivity,
+                            id
+                        )
                         contentResolver.delete(
                             Telephony.Sms.CONTENT_URI,
                             "${Telephony.Sms._ID}=?",
@@ -1576,7 +2179,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                     dp(76)
                 )
 
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
                 background = null
                 clipToOutline = false
             }
@@ -1591,7 +2194,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                 }
             } else {
                 image.setImageResource(android.R.drawable.ic_menu_save)
-                image.scaleType = ImageView.ScaleType.CENTER
+                image.scaleType = android.widget.ImageView.ScaleType.CENTER
                 image.setPadding(
                     dp(18),
                     dp(18),
@@ -1633,6 +2236,198 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             frame.addView(remove)
             attachmentPreview.addView(frame)
         }
+    }
+
+    private fun refreshSimSelector() {
+        val container = findViewById<View>(R.id.simSelectorContainer)
+        val label = findViewById<TextView>(R.id.simSelectorLabel)
+
+        try {
+            val subscriptionManager =
+                getSystemService(SubscriptionManager::class.java)
+
+            val subscriptions =
+                subscriptionManager?.activeSubscriptionInfoList
+                    ?.sortedBy { info ->
+                        if (info.simSlotIndex >= 0) {
+                            info.simSlotIndex
+                        } else {
+                            Int.MAX_VALUE
+                        }
+                    }
+                    ?: emptyList()
+
+            availableSubscriptions = subscriptions
+
+            if (subscriptions.size <= 1) {
+                container.visibility = View.VISIBLE
+                label.visibility = View.GONE
+                selectedSubscriptionId =
+                    SubscriptionManager.INVALID_SUBSCRIPTION_ID
+                return
+            }
+
+            container.visibility = View.VISIBLE
+            label.visibility = View.VISIBLE
+
+            val defaultSubscriptionId =
+                SubscriptionManager.getDefaultSmsSubscriptionId()
+
+            if (
+                selectedSubscriptionId ==
+                    SubscriptionManager.INVALID_SUBSCRIPTION_ID ||
+                subscriptions.none {
+                    it.subscriptionId == selectedSubscriptionId
+                }
+            ) {
+                selectedSubscriptionId =
+                    if (
+                        subscriptions.any {
+                            it.subscriptionId == defaultSubscriptionId
+                        }
+                    ) {
+                        defaultSubscriptionId
+                    } else {
+                        subscriptions.first().subscriptionId
+                    }
+            }
+
+            label.text = getSimLabel(selectedSubscriptionId)
+
+        } catch (_: Exception) {
+            availableSubscriptions = emptyList()
+            selectedSubscriptionId =
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID
+            container.visibility = View.VISIBLE
+            label.visibility = View.GONE
+        }
+    }
+
+    private fun getSimLabel(subscriptionId: Int): String {
+        val subscription = availableSubscriptions.firstOrNull {
+            it.subscriptionId == subscriptionId
+        }
+
+        val slot = subscription?.simSlotIndex ?: -1
+
+        return if (slot >= 0) {
+            "SIM ${slot + 1}"
+        } else {
+            "SIM"
+        }
+    }
+
+    private fun showSimPicker(anchor: View) {
+        if (availableSubscriptions.size <= 1) {
+            return
+        }
+
+        val popupContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                dp(4),
+                dp(4),
+                dp(4),
+                dp(4)
+            )
+
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(14).toFloat()
+                setColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_surface_variant
+                    )
+                )
+            }
+        }
+
+        val popup = PopupWindow(
+            popupContent,
+            dp(150),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = dp(6).toFloat()
+            isOutsideTouchable = true
+        }
+
+        for (subscription in availableSubscriptions) {
+            val selected =
+                subscription.subscriptionId == selectedSubscriptionId
+
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(
+                    dp(10),
+                    dp(8),
+                    dp(12),
+                    dp(8)
+                )
+                isClickable = true
+                isFocusable = true
+
+                val radio = ImageView(this@ConversationActivity).apply {
+                    setImageResource(
+                        if (selected) {
+                            R.drawable.ic_sim_radio_selected
+                        } else {
+                            R.drawable.ic_sim_radio_unselected
+                        }
+                    )
+                    layoutParams = LinearLayout.LayoutParams(
+                        dp(20),
+                        dp(20)
+                    )
+                }
+
+                val text = TextView(this@ConversationActivity).apply {
+                    this.text = getSimLabel(subscription.subscriptionId)
+                    textSize = 14f
+                    gravity = Gravity.CENTER_VERTICAL
+                    setTextColor(
+                        ContextCompat.getColor(
+                            this@ConversationActivity,
+                            R.color.messages_text_primary
+                        )
+                    )
+                    setPadding(dp(10), 0, 0, 0)
+                }
+
+                addView(radio)
+                addView(
+                    text,
+                    LinearLayout.LayoutParams(
+                        0,
+                        dp(40),
+                        1f
+                    )
+                )
+
+                setOnClickListener {
+                    try {
+                        selectedSubscriptionId =
+                            subscription.subscriptionId
+
+                        refreshSimSelector()
+
+                        popup.dismiss()
+                    } catch (_: Exception) {
+                        popup.dismiss()
+                    }
+                }
+            }
+
+            popupContent.addView(item)
+        }
+
+        popup.showAsDropDown(
+            anchor,
+            -dp(98),
+            -dp(122)
+        )
     }
 
     private fun sendMessage() {
@@ -1722,7 +2517,18 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
 
         try {
-            val smsManager = SmsManager.getDefault()
+            val smsManager =
+                if (
+                    selectedSubscriptionId !=
+                        SubscriptionManager.INVALID_SUBSCRIPTION_ID
+                ) {
+                    SmsManager
+                        .getSmsManagerForSubscriptionId(
+                            selectedSubscriptionId
+                        )
+                } else {
+                    SmsManager.getDefault()
+                }
 
             val values = ContentValues().apply {
                 put(Telephony.Sms.ADDRESS, address)

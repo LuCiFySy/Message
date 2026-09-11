@@ -31,6 +31,14 @@ class SmsStatusReceiver : BroadcastReceiver() {
                         Telephony.Sms.MESSAGE_TYPE_FAILED
                     }
                 )
+                put(
+                    Telephony.TextBasedSmsColumns.STATUS,
+                    if (success) {
+                        Telephony.TextBasedSmsColumns.STATUS_PENDING
+                    } else {
+                        Telephony.TextBasedSmsColumns.STATUS_FAILED
+                    }
+                )
             }
 
             try {
@@ -95,15 +103,26 @@ class SmsStatusReceiver : BroadcastReceiver() {
             }
 
         } else if (action == ACTION_SMS_DELIVERED) {
+        try {
+            val isSent = context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(Telephony.Sms.TYPE),
+                "${Telephony.Sms._ID}=?",
+                arrayOf(messageId.toString()),
+                null
+            )?.use { cursor ->
+                cursor.moveToFirst() &&
+                    cursor.getInt(0) == Telephony.Sms.MESSAGE_TYPE_SENT
+            } ?: false
 
-            val values = ContentValues().apply {
-                put(
-                    Telephony.TextBasedSmsColumns.STATUS,
-                    Telephony.TextBasedSmsColumns.STATUS_COMPLETE
-                )
-            }
+            if (isSent) {
+                val values = ContentValues().apply {
+                    put(
+                        Telephony.TextBasedSmsColumns.STATUS,
+                        Telephony.TextBasedSmsColumns.STATUS_COMPLETE
+                    )
+                }
 
-            try {
                 context.contentResolver.update(
                     Telephony.Sms.CONTENT_URI,
                     values,
@@ -115,9 +134,10 @@ class SmsStatusReceiver : BroadcastReceiver() {
                     context,
                     messageId
                 )
-            } catch (_: Exception) {
             }
+        } catch (_: Exception) {
         }
+    }
     }
 
     private fun notifyConversationChanged(
