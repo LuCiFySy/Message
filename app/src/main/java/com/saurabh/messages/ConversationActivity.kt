@@ -155,6 +155,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
 
         messageList = findViewById(R.id.messageList)
         messageInput = findViewById(R.id.messageInput)
+        restoreDraft()
         attachmentPreview = findViewById(R.id.attachmentPreview)
         attachmentPreviewScroll = findViewById(R.id.attachmentPreviewScroll)
 
@@ -248,6 +249,11 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             android.content.IntentFilter(ACTION_MESSAGES_CHANGED),
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
         )
+    }
+
+    override fun onPause() {
+        saveDraft()
+        super.onPause()
     }
 
     override fun onStop() {
@@ -1132,6 +1138,46 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             ),
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
         )
+    }
+
+    private fun saveDraft() {
+        if (threadId.isBlank()) return
+
+        val draft = messageInput.text.toString()
+        val prefs = getSharedPreferences("message_drafts", MODE_PRIVATE)
+
+        if (draft.isBlank()) {
+            prefs.edit()
+                .remove(threadId)
+                .commit()
+        } else {
+            prefs.edit()
+                .putString(threadId, draft)
+                .commit()
+        }
+    }
+
+    private fun clearDraft() {
+        if (threadId.isBlank()) return
+
+        getSharedPreferences("message_drafts", MODE_PRIVATE)
+            .edit()
+            .remove(threadId)
+            .apply()
+    }
+
+    private fun restoreDraft() {
+        if (threadId.isBlank()) return
+
+        val draft = getSharedPreferences(
+            "message_drafts",
+            MODE_PRIVATE
+        ).getString(threadId, null)
+
+        if (!draft.isNullOrBlank()) {
+            messageInput.setText(draft)
+            messageInput.setSelection(messageInput.text.length)
+        }
     }
 
     private fun loadMessages() {
@@ -2464,6 +2510,12 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             try {
                 val settings = com.klinker.android.send_message.Settings()
                 settings.setUseSystemSending(true)
+                if (
+                    selectedSubscriptionId !=
+                        SubscriptionManager.INVALID_SUBSCRIPTION_ID
+                ) {
+                    settings.setSubscriptionId(selectedSubscriptionId)
+                }
 
                 val transaction = com.klinker.android.send_message.Transaction(
                     this,
@@ -2590,6 +2642,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             )
 
             messageInput.text.clear()
+            clearDraft()
             loadMessages()
 
         } catch (e: Exception) {
