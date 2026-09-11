@@ -69,6 +69,48 @@ class ConversationActivity : AppCompatActivity() {
 
     private val selectedAttachments = mutableListOf<Uri>()
 
+    private val forwardContactPicker =
+        registerForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode != RESULT_OK) {
+                pendingForwardText = null
+                return@registerForActivityResult
+            }
+
+            val contactUri = result.data?.data
+            val forwardText = pendingForwardText
+            pendingForwardText = null
+
+            if (contactUri == null || forwardText.isNullOrBlank()) return@registerForActivityResult
+
+            contentResolver.query(
+                contactUri,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val numberIndex = cursor.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    )
+
+                    if (numberIndex >= 0) {
+                        val selectedAddress =
+                            cursor.getString(numberIndex)?.trim()
+
+                        if (!selectedAddress.isNullOrBlank()) {
+                            openForwardConversation(
+                                selectedAddress,
+                                forwardText
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
     private val attachmentPicker =
         registerForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
@@ -83,6 +125,7 @@ class ConversationActivity : AppCompatActivity() {
         }
 
     private var selectionMode = false
+    private var pendingForwardText: String? = null
     private lateinit var popupWindow: PopupWindow
     private val selectedMessageIds = LinkedHashSet<Long>()
     private val selectedMessageBodies = LinkedHashMap<Long, String>()
@@ -156,6 +199,20 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         messageList = findViewById(R.id.messageList)
         messageInput = findViewById(R.id.messageInput)
         restoreDraft()
+
+        val prefilledText =
+            intent.getStringExtra("forward_text")
+                ?: intent.getStringExtra("shared_text")
+
+        prefilledText?.let { text ->
+            if (text.isNotBlank()) {
+                if (messageInput.text.isNotBlank()) {
+                    messageInput.append("\n\n")
+                }
+                messageInput.append(text)
+                messageInput.setSelection(messageInput.text.length)
+            }
+        }
         attachmentPreview = findViewById(R.id.attachmentPreview)
         attachmentPreviewScroll = findViewById(R.id.attachmentPreviewScroll)
 
@@ -1474,6 +1531,14 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
 
         bubble.setOnLongClickListener {
+            if (selectionMode && selectedMessageIds.contains(messageId)) {
+                bubble.setTextIsSelectable(true)
+                bubble.movementMethod =
+                    android.text.method.ArrowKeyMovementMethod.getInstance()
+
+                return@setOnLongClickListener false
+            }
+
             if (!selectionMode) {
                 selectionMode = true
                 selectedMessageIds.clear()
@@ -2025,6 +2090,10 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             copySelectedMessages()
         }
 
+        findViewById<TextView>(R.id.messageSelectionForward).setOnClickListener {
+            forwardSelectedMessages()
+        }
+
         findViewById<TextView>(R.id.messageSelectionDelete).setOnClickListener {
             deleteSelectedMessages()
         }
@@ -2043,6 +2112,84 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         findViewById<View>(R.id.conversationAddress).visibility = View.VISIBLE
 
         loadMessages()
+    }
+
+    private fun forwardSelectedMessages() {
+        if (selectedMessageIds.isEmpty()) return
+
+        val placeholders = selectedMessageIds.joinToString(",") { "?" }
+        val selectionArgs =
+            selectedMessageIds.map { it.toString() }.toTypedArray()
+
+        val bodies = mutableListOf<String>()
+
+        try {
+            contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(
+                    Telephony.Sms._ID,
+                    Telephony.Sms.BODY
+                ),
+                "${Telephony.Sms._ID} IN ($placeholders)",
+                selectionArgs,
+                "${Telephony.Sms.DATE} ASC, ${Telephony.Sms._ID} ASC"
+            )?.use { cursor ->
+                val bodyIndex =
+                    cursor.getColumnIndex(Telephony.Sms.BODY)
+
+                while (cursor.moveToNext()) {
+                    if (bodyIndex >= 0) {
+                        val body = cursor.getString(bodyIndex)
+                        if (!body.isNullOrBlank()) {
+                            bodies.add(body)
+                        }
+                    }
+                }
+            }
+        } catch (_: SecurityException) {
+            return
+        }
+
+        if (bodies.isEmpty()) return
+
+        pendingForwardText = bodies.joinToString("\n\n")
+
+        exitSelectionMode()
+
+        val intent = Intent(
+            Intent.ACTION_PICK,
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        )
+
+        forwardContactPicker.launch(intent)
+    }
+
+    private fun openForwardConversation(
+        selectedAddress: String,
+        forwardText: String
+    ) {
+        val targetThreadId =
+            Telephony.Threads.getOrCreateThreadId(
+                this,
+                selectedAddress
+            )
+
+        startActivity(
+            Intent(this, ConversationActivity::class.java).apply {
+                putExtra(
+                    "thread_id",
+                    targetThreadId.toString()
+                )
+                putExtra(
+                    "address",
+                    selectedAddress
+                )
+                putExtra(
+                    "forward_text",
+                    forwardText
+                )
+            }
+        )
     }
 
     private fun copySelectedMessages() {
