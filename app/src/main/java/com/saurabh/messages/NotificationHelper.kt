@@ -33,30 +33,14 @@ object NotificationHelper {
         "com.saurabh.messages.ACTION_COPY_OTP"
 
 
-    fun cancelMessageNotification(context: Context, messageId: Long) {
+    fun cancelMessageNotification(context: Context, threadId: Long) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.cancel(messageId.toInt())
+        manager.cancel(threadId.toInt())
     }
+
     fun cancelThreadNotifications(context: Context, threadId: Long) {
-        val projection = arrayOf(Telephony.Sms._ID)
-
-        try {
-            context.contentResolver.query(
-                Telephony.Sms.CONTENT_URI,
-                projection,
-                "${Telephony.Sms.THREAD_ID}=?",
-                arrayOf(threadId.toString()),
-                null
-            )?.use { cursor ->
-                val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
-                val manager = context.getSystemService(NotificationManager::class.java)
-
-                while (cursor.moveToNext()) {
-                    manager.cancel(cursor.getLong(idIndex).toInt())
-                }
-            }
-        } catch (_: Exception) {
-        }
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.cancel(threadId.toInt())
     }
 
     fun createChannel(context: Context) {
@@ -223,6 +207,65 @@ object NotificationHelper {
 
         createChannel(context)
 
+        val threadId = try {
+            Telephony.Threads.getOrCreateThreadId(
+                context,
+                address
+            )
+        } catch (_: Exception) {
+            return
+        }
+
+        val messages = mutableListOf<Triple<String, Long, Boolean>>()
+
+        try {
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(
+                    Telephony.Sms.BODY,
+                    Telephony.Sms.DATE,
+                    Telephony.Sms.TYPE
+                ),
+                "${Telephony.Sms.THREAD_ID}=?",
+                arrayOf(threadId.toString()),
+                "${Telephony.Sms.DATE} DESC"
+            )?.use { cursor ->
+                val bodyIndex = cursor.getColumnIndexOrThrow(
+                    Telephony.Sms.BODY
+                )
+                val dateIndex = cursor.getColumnIndexOrThrow(
+                    Telephony.Sms.DATE
+                )
+                val typeIndex = cursor.getColumnIndexOrThrow(
+                    Telephony.Sms.TYPE
+                )
+
+                while (cursor.moveToNext() && messages.size < 4) {
+                    val messageBody =
+                        cursor.getString(bodyIndex) ?: continue
+                    val date = cursor.getLong(dateIndex)
+                    val type = cursor.getInt(typeIndex)
+
+                    val outgoing =
+                        type == Telephony.Sms.MESSAGE_TYPE_SENT ||
+                        type == Telephony.Sms.MESSAGE_TYPE_OUTBOX ||
+                        type == Telephony.Sms.MESSAGE_TYPE_FAILED
+
+                    messages.add(
+                        Triple(
+                            messageBody,
+                            date,
+                            outgoing
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            return
+        }
+
+        messages.reverse()
+
         val openIntent = Intent(
             context,
             MainActivity::class.java
@@ -234,7 +277,7 @@ object NotificationHelper {
 
         val openPendingIntent = PendingIntent.getActivity(
             context,
-            messageId.toInt(),
+            threadId.toInt(),
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
                 PendingIntent.FLAG_IMMUTABLE
@@ -244,9 +287,10 @@ object NotificationHelper {
             context,
             NotificationActionReceiver::class.java
         ).apply {
-            action = NotificationHelper.ACTION_REPLY
+            action = ACTION_REPLY
             putExtra("message_id", messageId)
             putExtra("address", address)
+            putExtra("thread_id", threadId)
         }
 
         val replyRemoteInput = RemoteInput.Builder(
@@ -257,7 +301,7 @@ object NotificationHelper {
 
         val replyPendingIntent = PendingIntent.getBroadcast(
             context,
-            (messageId + 300000).toInt(),
+            (threadId + 300000).toInt(),
             replyIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
                 PendingIntent.FLAG_MUTABLE
@@ -269,11 +313,12 @@ object NotificationHelper {
         ).apply {
             action = ACTION_DELETE
             putExtra("message_id", messageId)
+            putExtra("thread_id", threadId)
         }
 
         val deletePendingIntent = PendingIntent.getBroadcast(
             context,
-            (messageId + 100000).toInt(),
+            (threadId + 100000).toInt(),
             deleteIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
                 PendingIntent.FLAG_IMMUTABLE
@@ -285,11 +330,12 @@ object NotificationHelper {
         ).apply {
             action = ACTION_MARK_READ
             putExtra("message_id", messageId)
+            putExtra("thread_id", threadId)
         }
 
         val markReadPendingIntent = PendingIntent.getBroadcast(
             context,
-            (messageId + 200000).toInt(),
+            (threadId + 200000).toInt(),
             markReadIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or
                 PendingIntent.FLAG_IMMUTABLE
@@ -297,29 +343,13 @@ object NotificationHelper {
 
         val otp = extractOtp(body)
 
-        val copyOtpPendingIntent = otp?.let {
-            val copyIntent = Intent(
-                context,
-                OtpCopyReceiver::class.java
-            ).apply {
-                action = ACTION_COPY_OTP
-                putExtra("otp", it)
-            }
-
-            PendingIntent.getBroadcast(
-                context,
-                (messageId + 400000).toInt(),
-                copyIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or
-                PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-
         val notificationBuilder = NotificationCompat.Builder(
             context,
             CHANNEL_ID
         )
-            .setSmallIcon(com.saurabh.messages.R.drawable.ic_notification_message)
+            .setSmallIcon(
+                com.saurabh.messages.R.drawable.ic_notification_message
+            )
             .setLargeIcon(
                 android.graphics.BitmapFactory.decodeResource(
                     context.resources,
@@ -328,19 +358,57 @@ object NotificationHelper {
             )
             .setContentTitle(getContactName(context, address))
             .setContentText(body)
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText(body)
-            )
             .setContentIntent(openPendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
 
-        if (otp != null && copyOtpPendingIntent != null) {
+        val me = androidx.core.app.Person.Builder()
+            .setName("Me")
+            .build()
+
+        val contact = androidx.core.app.Person.Builder()
+            .setName(getContactName(context, address))
+            .build()
+
+        val messagingStyle =
+            NotificationCompat.MessagingStyle(me)
+                .setConversationTitle(
+                    getContactName(context, address)
+                )
+
+        messages.forEach { (messageBody, date, outgoing) ->
+            messagingStyle.addMessage(
+                NotificationCompat.MessagingStyle.Message(
+                    messageBody,
+                    date,
+                    if (outgoing) me else contact
+                )
+            )
+        }
+
+        notificationBuilder.setStyle(messagingStyle)
+
+        if (otp != null) {
+            val copyIntent = Intent(
+                context,
+                OtpCopyReceiver::class.java
+            ).apply {
+                action = ACTION_COPY_OTP
+                putExtra("otp", otp)
+            }
+
+            val copyPendingIntent = PendingIntent.getBroadcast(
+                context,
+                (threadId + 400000).toInt(),
+                copyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or
+                    PendingIntent.FLAG_IMMUTABLE
+            )
+
             notificationBuilder.addAction(
                 android.R.drawable.ic_menu_save,
                 "Copy OTP",
-                copyOtpPendingIntent
+                copyPendingIntent
             )
 
             notificationBuilder.addAction(
@@ -379,7 +447,15 @@ object NotificationHelper {
             NotificationManager::class.java
         )
 
-        android.util.Log.d("NotificationHelper", "POST notification id=$messageId address=$address")
-        manager.notify(messageId.toInt(), notification)
+        android.util.Log.d(
+            "NotificationHelper",
+            "POST thread notification id=$threadId address=$address"
+        )
+
+        manager.notify(
+            threadId.toInt(),
+            notification
+        )
     }
+
 }

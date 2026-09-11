@@ -20,9 +20,9 @@ import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.widget.PopupWindow
 import android.view.ViewGroup
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -49,6 +49,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchInput: EditText
 
     private var selectionMode = false
+    private var pendingSharedText: String? = null
+    private var sharePickerOpen = false
     private val selectedThreadIds = LinkedHashSet<String>()
 
     private val contactNameCache = HashMap<String, String?>()
@@ -60,9 +62,18 @@ class MainActivity : AppCompatActivity() {
 
     private val contactPickerLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode != RESULT_OK) return@registerForActivityResult
+            sharePickerOpen = false
 
-            val contactUri = result.data?.data ?: return@registerForActivityResult
+            if (result.resultCode != RESULT_OK) {
+                pendingSharedText = null
+                return@registerForActivityResult
+            }
+
+            val contactUri = result.data?.data
+            if (contactUri == null) {
+                pendingSharedText = null
+                return@registerForActivityResult
+            }
 
             contentResolver.query(
                 contactUri,
@@ -83,12 +94,19 @@ class MainActivity : AppCompatActivity() {
                             val threadId =
                                 Telephony.Threads.getOrCreateThreadId(this, address)
 
+                            val sharedText = pendingSharedText
+                            pendingSharedText = null
+
                             val intent = Intent(
                                 this,
                                 ConversationActivity::class.java
                             ).apply {
                                 putExtra("thread_id", threadId.toString())
                                 putExtra("address", address)
+
+                                if (!sharedText.isNullOrBlank()) {
+                                    putExtra("shared_text", sharedText)
+                                }
                             }
 
                             startActivity(intent)
@@ -101,6 +119,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        if (intent.action == Intent.ACTION_SEND) {
+            pendingSharedText =
+                intent.getStringExtra(Intent.EXTRA_TEXT)
+        }
 
         val mainRoot = findViewById<View>(R.id.mainRoot)
 
@@ -132,11 +155,195 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.startChatButton).setOnClickListener {
-            val intent = Intent(
-                Intent.ACTION_PICK,
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+            val input = EditText(this).apply {
+                hint = "Phone number"
+                inputType = android.text.InputType.TYPE_CLASS_PHONE
+                setSingleLine(true)
+                textSize = 17f
+                setPadding(0, 0, 0, 0)
+            }
+
+            val chooseContact = TextView(this).apply {
+                text = "Choose contact"
+                textSize = 14f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.messages_primary
+                    )
+                )
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                isClickable = true
+                isFocusable = true
+            }
+
+            val title = TextView(this).apply {
+                text = "Start chat"
+                textSize = 22f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.messages_text_primary
+                    )
+                )
+            }
+
+            val cancel = TextView(this).apply {
+                text = "Cancel"
+                textSize = 14f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.messages_primary
+                    )
+                )
+                setPadding(dp(16), 0, dp(16), 0)
+                minHeight = dp(48)
+                isClickable = true
+                isFocusable = true
+            }
+
+            val message = TextView(this).apply {
+                text = "Message"
+                textSize = 14f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.messages_primary
+                    )
+                )
+                setPadding(dp(16), 0, dp(16), 0)
+                minHeight = dp(48)
+                isClickable = true
+                isFocusable = true
+            }
+
+            val buttons = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            }
+
+            buttons.addView(
+                chooseContact,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    dp(48)
+                )
             )
-            contactPickerLauncher.launch(intent)
+
+            buttons.addView(
+                cancel,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    dp(48)
+                )
+            )
+
+            buttons.addView(
+                message,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    dp(48)
+                )
+            )
+
+            val container = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(18), dp(18), dp(10), dp(6))
+
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(
+                        ContextCompat.getColor(
+                            this@MainActivity,
+                            R.color.messages_surface
+                        )
+                    )
+                    cornerRadius = dp(24).toFloat()
+                }
+            }
+
+            container.addView(title)
+
+            container.addView(
+                input,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(48)
+                ).apply {
+                    topMargin = dp(14)
+                }
+            )
+
+                        container.addView(
+                buttons,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(48)
+                ).apply {
+                    topMargin = dp(4)
+                }
+            )
+
+            val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+                .setView(container)
+                .create()
+
+            cancel.setOnClickListener {
+                dialog.dismiss()
+            }
+
+            message.setOnClickListener {
+                val address = input.text.toString().trim()
+
+                if (address.isBlank()) {
+                    input.error = "Enter a phone number"
+                    return@setOnClickListener
+                }
+
+                val threadId =
+                    Telephony.Threads.getOrCreateThreadId(this, address)
+
+                dialog.dismiss()
+
+                startActivity(
+                    Intent(this, ConversationActivity::class.java).apply {
+                        putExtra("thread_id", threadId.toString())
+                        putExtra("address", address)
+                    }
+                )
+            }
+
+            chooseContact.setOnClickListener {
+                dialog.dismiss()
+
+                contactPickerLauncher.launch(
+                    Intent(
+                        Intent.ACTION_PICK,
+                        ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                    )
+                )
+            }
+
+            dialog.setOnShowListener {
+                dialog.window?.setBackgroundDrawable(
+                    android.graphics.drawable.ColorDrawable(
+                        android.graphics.Color.TRANSPARENT
+                    )
+                )
+                dialog.window?.setLayout(
+                    dp(330),
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            dialog.show()
         }
 
         searchInput.addTextChangedListener(object : TextWatcher {
@@ -231,6 +438,18 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
 
+        if (pendingSharedText != null && !sharePickerOpen) {
+            sharePickerOpen = true
+
+            contactPickerLauncher.launch(
+                Intent(
+                    Intent.ACTION_PICK,
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                )
+            )
+            return
+        }
+
         if (firstResume) {
             firstResume = false
             return
@@ -238,6 +457,27 @@ class MainActivity : AppCompatActivity() {
 
         if (::conversationList.isInitialized) {
             checkSmsAccess()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+
+        if (intent?.action == Intent.ACTION_SEND) {
+            pendingSharedText =
+                intent.getStringExtra(Intent.EXTRA_TEXT)
+
+            if (!pendingSharedText.isNullOrBlank() && !sharePickerOpen) {
+                sharePickerOpen = true
+
+                contactPickerLauncher.launch(
+                    Intent(
+                        Intent.ACTION_PICK,
+                        ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                    )
+                )
+            }
         }
     }
 
@@ -1259,10 +1499,30 @@ class MainActivity : AppCompatActivity() {
             maxLines = 1
         }
 
+        val draft = getSharedPreferences(
+            "message_drafts",
+            MODE_PRIVATE
+        ).getString(conversation.threadId, null)
+
         val preview = TextView(this).apply {
-            text = conversation.body.replace("\n", " ")
+            text = if (!draft.isNullOrBlank()) {
+                "Draft: ${draft.replace("\n", " ")}"
+            } else {
+                conversation.body.replace("\n", " ")
+            }
             textSize = 14f
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_text_secondary))
+            setTextColor(
+                ContextCompat.getColor(
+                    this@MainActivity,
+                    R.color.messages_text_secondary
+                )
+            )
+            if (!draft.isNullOrBlank()) {
+                typeface = android.graphics.Typeface.create(
+                    typeface,
+                    android.graphics.Typeface.ITALIC
+                )
+            }
             maxLines = 1
         }
 

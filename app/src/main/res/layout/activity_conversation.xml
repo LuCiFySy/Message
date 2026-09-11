@@ -129,6 +129,22 @@
             android:focusable="true" />
 
         <TextView
+            android:id="@+id/messageSelectionForward"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Forward"
+            android:textColor="@color/messages_text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_selection_action"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
             android:id="@+id/messageSelectionDelete"
             android:layout_width="wrap_content"
             android:layout_height="44dp"

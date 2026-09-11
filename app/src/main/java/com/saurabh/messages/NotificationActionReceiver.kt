@@ -12,6 +12,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val messageId = intent.getLongExtra("message_id", -1L)
+        val threadId = intent.getLongExtra("thread_id", -1L)
 
         if (messageId == -1L) {
             return
@@ -23,11 +24,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
             }
 
             NotificationHelper.ACTION_DELETE -> {
-                deleteMessage(context, messageId)
+                deleteMessage(context, messageId, threadId)
             }
 
             NotificationHelper.ACTION_MARK_READ -> {
-                markAsRead(context, messageId)
+                markAsRead(context, messageId, threadId)
             }
         }
     }
@@ -76,7 +77,12 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 values
             )
 
-            cancelNotification(context, messageId)
+            NotificationHelper.showMessageNotification(
+                context = context,
+                messageId = messageId,
+                address = address,
+                body = reply
+            )
 
         } catch (_: SecurityException) {
             return
@@ -87,7 +93,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     private fun deleteMessage(
         context: Context,
-        messageId: Long
+        messageId: Long,
+        threadId: Long
     ) {
         try {
             context.contentResolver.delete(
@@ -99,12 +106,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
             return
         }
 
-        cancelNotification(context, messageId)
+        cancelNotification(context, threadId)
     }
 
     private fun markAsRead(
         context: Context,
-        messageId: Long
+        messageId: Long,
+        threadId: Long
     ) {
         try {
             val values = ContentValues().apply {
@@ -121,17 +129,17 @@ class NotificationActionReceiver : BroadcastReceiver() {
             return
         }
 
-        cancelNotification(context, messageId)
+        cancelNotification(context, threadId)
     }
 
     private fun cancelNotification(
         context: Context,
-        messageId: Long
+        threadId: Long
     ) {
         val manager = context.getSystemService(
             android.app.NotificationManager::class.java
         )
 
-        manager.cancel(messageId.toInt())
+        manager.cancel(threadId.toInt())
     }
 }
