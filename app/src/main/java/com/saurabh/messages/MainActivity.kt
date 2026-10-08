@@ -52,13 +52,21 @@ class MainActivity : AppCompatActivity() {
     private var selectionMode = false
     private var pendingSharedText: String? = null
     private var sharePickerOpen = false
+    private var smsRoleRequestInProgress = false
+    private var smsSetupDialogShowing = false
     private val selectedThreadIds = LinkedHashSet<String>()
 
     private val contactNameCache = HashMap<String, String?>()
 
     private val smsRoleLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            checkSmsAccess()
+            smsRoleRequestInProgress = false
+
+            if (isDefaultSmsApp()) {
+                checkSmsAccess()
+            } else {
+                showSmsRoleDeniedDialog()
+            }
         }
 
     private val contactPickerLauncher =
@@ -456,8 +464,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (::conversationList.isInitialized) {
-            checkSmsAccess()
+        if (::conversationList.isInitialized &&
+            !smsRoleRequestInProgress &&
+            !smsSetupDialogShowing
+        ) {
+            if (isDefaultSmsApp()) {
+                checkSmsAccess()
+            } else {
+                showSmsSetupDialog()
+            }
         }
     }
 
@@ -537,7 +552,7 @@ class MainActivity : AppCompatActivity() {
             conversationList.removeAllViews()
             emptyText.visibility = View.VISIBLE
             emptyText.text = "Set Messages as the default SMS app to continue"
-            requestDefaultSmsApp()
+            showSmsSetupDialog()
         }
     }
 
@@ -551,27 +566,124 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestDefaultSmsApp() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = getSystemService(RoleManager::class.java)
+        if (smsRoleRequestInProgress || isDefaultSmsApp()) {
+            return
+        }
 
-            if (roleManager != null &&
-                roleManager.isRoleAvailable(RoleManager.ROLE_SMS)
-            ) {
-                val intent = roleManager.createRequestRoleIntent(
-                    RoleManager.ROLE_SMS
-                )
+        smsRoleRequestInProgress = true
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = getSystemService(RoleManager::class.java)
+
+                if (
+                    roleManager != null &&
+                    roleManager.isRoleAvailable(RoleManager.ROLE_SMS)
+                ) {
+                    val intent = roleManager.createRequestRoleIntent(
+                        RoleManager.ROLE_SMS
+                    )
+                    smsRoleLauncher.launch(intent)
+                } else {
+                    smsRoleRequestInProgress = false
+                    showSmsRoleDeniedDialog()
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val intent =
+                    Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                        putExtra(
+                            Telephony.Sms.Intents.EXTRA_PACKAGE_NAME,
+                            packageName
+                        )
+                    }
+
                 smsRoleLauncher.launch(intent)
             }
-        } else {
-            @Suppress("DEPRECATION")
-            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
-                putExtra(
-                    Telephony.Sms.Intents.EXTRA_PACKAGE_NAME,
-                    packageName
+        } catch (_: Exception) {
+            smsRoleRequestInProgress = false
+            showSmsRoleDeniedDialog()
+        }
+    }
+
+    private fun showSmsSetupDialog() {
+        if (smsSetupDialogShowing || isDefaultSmsApp()) {
+            return
+        }
+
+        smsSetupDialogShowing = true
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Set up Messages")
+            .setMessage(
+                "Messages needs to be your default SMS app to read and send messages.\n\n" +
+                "If Android says access is restricted, open App info, tap the three-dot menu, " +
+                "choose Allow restricted settings, return here, and tap Set as default again."
+            )
+            .setNegativeButton("Close") { dialog, _ ->
+                smsSetupDialogShowing = false
+                dialog.dismiss()
+            }
+            .setNeutralButton("Open App Info") { dialog, _ ->
+                smsSetupDialogShowing = false
+                dialog.dismiss()
+
+                startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName")
+                    )
                 )
             }
-            smsRoleLauncher.launch(intent)
+            .setPositiveButton("Set as default") { dialog, _ ->
+                smsSetupDialogShowing = false
+                dialog.dismiss()
+                requestDefaultSmsApp()
+            }
+            .setOnDismissListener {
+                smsSetupDialogShowing = false
+            }
+            .show()
+    }
+
+    private fun showSmsRoleDeniedDialog() {
+        if (smsSetupDialogShowing || isDefaultSmsApp()) {
+            return
         }
+
+        smsSetupDialogShowing = true
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Default SMS access was not granted")
+            .setMessage(
+                "Android did not allow Messages to become the default SMS app.\n\n" +
+                "If access is restricted, open App info, tap the three-dot menu, " +
+                "choose Allow restricted settings, return here, and try again."
+            )
+            .setNegativeButton("Close") { dialog, _ ->
+                smsSetupDialogShowing = false
+                dialog.dismiss()
+            }
+            .setNeutralButton("Open App Info") { dialog, _ ->
+                smsSetupDialogShowing = false
+                dialog.dismiss()
+
+                startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            .setPositiveButton("Try again") { dialog, _ ->
+                smsSetupDialogShowing = false
+                dialog.dismiss()
+                requestDefaultSmsApp()
+            }
+            .setOnDismissListener {
+                smsSetupDialogShowing = false
+            }
+            .show()
     }
 
     private fun hasSmsPermission(): Boolean {
