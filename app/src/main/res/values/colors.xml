@@ -22,5 +22,21 @@
 
     <color name="ic_launcher_background">#FFFFFF</color>
 
-    <color name="messages_chip_selected_text">#211F26</color>
+    <color name="messages_chip_selected_text">#FFFFFF</color>
+    <!-- Translucent tint treatment -->
+    <color name="messages_tint_surface">#146750A4</color>
+    <color name="messages_tint_surface_strong">#286750A4</color>
+    <color name="messages_tint_border">#556750A4</color>
+
+
+    <!-- Default fallbacks for night-mode colors -->
+    <color name="messages_glass_outgoing">#59083D81</color>
+    <color name="messages_glass_outgoing_border">#663D5FAD</color>
+    <color name="messages_glass_incoming">#0FFFFFFF</color>
+    <color name="messages_glass_incoming_border">#1CFFFFFF</color>
+    <color name="messages_compose_background">#0CFFFFFF</color>
+    <color name="messages_compose_border">#18FFFFFF</color>
+    <color name="messages_compose_button">#881A3F86</color>
+    <color name="messages_compose_button_border">#FF3F66C7</color>
+    <color name="messages_compose_icon">#DCE7FF</color>
 </resources>

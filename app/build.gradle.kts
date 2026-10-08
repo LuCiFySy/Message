@@ -11,8 +11,23 @@ android {
         applicationId = "com.saurabh.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(providers.gradleProperty("MESSAGE_KEYSTORE").get())
+            storePassword = providers.gradleProperty("MESSAGE_STORE_PASSWORD").get()
+            keyAlias = providers.gradleProperty("MESSAGE_KEY_ALIAS").get()
+            keyPassword = providers.gradleProperty("MESSAGE_KEY_PASSWORD").get()
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {
