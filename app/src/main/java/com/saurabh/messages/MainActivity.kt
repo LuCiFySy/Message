@@ -24,6 +24,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -536,6 +537,7 @@ class MainActivity : AppCompatActivity() {
             conversationList.removeAllViews()
             emptyText.visibility = View.VISIBLE
             emptyText.text = "Set Messages as the default SMS app to continue"
+            requestDefaultSmsApp()
         }
     }
 
@@ -1461,6 +1463,9 @@ class MainActivity : AppCompatActivity() {
                 }
         }
 
+        val avatarContainer =
+            android.widget.FrameLayout(this)
+
         val avatar = TextView(this).apply {
             val initial = conversation.displayName
                 .filter { it.isLetterOrDigit() }
@@ -1472,12 +1477,31 @@ class MainActivity : AppCompatActivity() {
             text = initial
             textSize = 20f
             gravity = Gravity.CENTER
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.messages_primary))
-            setBackgroundResource(R.drawable.bg_avatar)
+
+            setTextColor(
+                Color.rgb(220, 231, 255)
+            )
+
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(136, 26, 63, 134))
+                setStroke(
+                    dp(1),
+                    Color.rgb(63, 102, 199)
+                )
+            }
         }
 
-        row.addView(
+        avatarContainer.addView(
             avatar,
+            android.widget.FrameLayout.LayoutParams(
+                dp(48),
+                dp(48)
+            )
+        )
+
+        row.addView(
+            avatarContainer,
             LinearLayout.LayoutParams(
                 dp(48),
                 dp(48)
@@ -1486,7 +1510,12 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        val textContainer = LinearLayout(this).apply {
+        loadContactPhoto(
+            avatarContainer,
+            conversation.address
+        )
+
+val textContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams =
                 LinearLayout.LayoutParams(0, -2, 1f)
@@ -1611,6 +1640,168 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(2)
             }
         )
+    }
+
+        private fun loadContactPhoto(
+        avatarContainer: android.widget.FrameLayout,
+        address: String
+    ) {
+        Thread {
+            try {
+
+                /*
+                 * Same PhoneLookup approach as the working
+                 * LuCiFySy/messages implementation.
+                 */
+                val lookupUri =
+                    Uri.withAppendedPath(
+                        ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                        Uri.encode(address)
+                    )
+
+                val photoUri =
+                    contentResolver.query(
+                        lookupUri,
+                        arrayOf(
+                            ContactsContract.PhoneLookup.PHOTO_URI
+                        ),
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+
+                        if (cursor.moveToFirst()) {
+
+                            val index =
+                                cursor.getColumnIndex(
+                                    ContactsContract.PhoneLookup.PHOTO_URI
+                                )
+
+                            if (index >= 0) {
+                                cursor.getString(index)
+                            } else {
+                                null
+                            }
+
+                        } else {
+                            null
+                        }
+                    }
+
+                if (photoUri.isNullOrBlank()) {
+                    return@Thread
+                }
+
+                runOnUiThread {
+
+                    try {
+
+                        if (avatarContainer.parent == null) {
+                            return@runOnUiThread
+                        }
+
+                        val photo =
+                            ImageView(this)
+
+                        photo.scaleType =
+                            ImageView.ScaleType.CENTER_CROP
+
+                        photo.setImageURI(
+                            Uri.parse(photoUri)
+                        )
+
+                        if (photo.drawable == null) {
+                            return@runOnUiThread
+                        }
+
+                        /*
+                         * Force Android to clip the actual bitmap
+                         * into a circle. This is more reliable than
+                         * relying on the ImageView background outline.
+                         */
+                        if (
+                            android.os.Build.VERSION.SDK_INT >=
+                            android.os.Build.VERSION_CODES.LOLLIPOP
+                        ) {
+
+                            photo.outlineProvider =
+                                object :
+                                    android.view.ViewOutlineProvider() {
+
+                                    override fun getOutline(
+                                        view: android.view.View,
+                                        outline: android.graphics.Outline
+                                    ) {
+                                        outline.setOval(
+                                            0,
+                                            0,
+                                            view.width,
+                                            view.height
+                                        )
+                                    }
+                                }
+
+                            photo.clipToOutline = true
+                        }
+
+                        /*
+                         * Remove the initial avatar.
+                         */
+                        avatarContainer.removeAllViews()
+
+                        avatarContainer.addView(
+                            photo,
+                            android.widget.FrameLayout.LayoutParams(
+                                dp(48),
+                                dp(48)
+                            )
+                        )
+
+                        /*
+                         * Blue glass-style border on top.
+                         */
+                        val borderView =
+                            ImageView(this)
+
+                        borderView.background =
+                            GradientDrawable().apply {
+                                shape =
+                                    GradientDrawable.OVAL
+
+                                setColor(
+                                    Color.TRANSPARENT
+                                )
+
+                                setStroke(
+                                    dp(1),
+                                    Color.rgb(
+                                        63,
+                                        102,
+                                        199
+                                    )
+                                )
+                            }
+
+                        avatarContainer.addView(
+                            borderView,
+                            android.widget.FrameLayout.LayoutParams(
+                                dp(48),
+                                dp(48)
+                            )
+                        )
+
+                    } catch (_: Exception) {
+                    }
+                }
+
+            } catch (_: Exception) {
+                /*
+                 * Keep the glass initial avatar if the
+                 * contact photo cannot be loaded.
+                 */
+            }
+
+        }.start()
     }
 
     private fun formatDate(timestamp: Long): String {

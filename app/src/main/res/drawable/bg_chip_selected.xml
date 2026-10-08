@@ -2,7 +2,11 @@
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
 
-    <solid android:color="@color/messages_primary" />
+    <solid android:color="#59083D81" />
+
+    <stroke
+        android:width="1dp"
+        android:color="#663D5FAD" />
 
     <corners android:radius="22dp" />
 

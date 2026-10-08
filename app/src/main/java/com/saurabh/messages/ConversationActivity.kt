@@ -151,8 +151,11 @@ class ConversationActivity : AppCompatActivity() {
         val composerContainer = findViewById<View>(R.id.composerContainer)
 
         ViewCompat.setOnApplyWindowInsetsListener(conversationRoot) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val systemBars =
+                insets.getInsets(WindowInsetsCompat.Type.systemBars())
+
+            val ime =
+                insets.getInsets(WindowInsetsCompat.Type.ime())
 
             view.setPadding(
                 view.paddingLeft,
@@ -164,7 +167,11 @@ class ConversationActivity : AppCompatActivity() {
             val composerParams =
                 composerContainer.layoutParams as LinearLayout.LayoutParams
 
-            composerParams.bottomMargin = ime.bottom
+            // Keep the composer above the gesture/navigation area
+            // when the keyboard is closed, and above the IME when open.
+            composerParams.bottomMargin =
+                maxOf(systemBars.bottom, ime.bottom)
+
             composerContainer.layoutParams = composerParams
 
             if (ime.bottom > 0) {
@@ -188,13 +195,334 @@ val contactName = getContactName(address) ?: address
 findViewById<TextView>(R.id.conversationTitle).text = contactName
         findViewById<TextView>(R.id.conversationAddress).text = address
 
-        val avatar = findViewById<TextView>(R.id.conversationAvatar)
-        avatar.text = contactName
-            .filter { it.isLetterOrDigit() }
-            .firstOrNull()
-            ?.uppercaseChar()
-            ?.toString()
-            ?: "?"
+        val avatar =
+            findViewById<TextView>(
+                R.id.conversationAvatar
+            )
+
+        avatar.text =
+            contactName
+                .filter { it.isLetterOrDigit() }
+                .firstOrNull()
+                ?.uppercaseChar()
+                ?.toString()
+                ?: "?"
+
+        // Default glass avatar.
+        avatar.background =
+            GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(
+                    Color.argb(
+                        136,
+                        26,
+                        63,
+                        134
+                    )
+                )
+                setStroke(
+                    dp(1),
+                    Color.rgb(
+                        63,
+                        102,
+                        199
+                    )
+                )
+            }
+
+        avatar.setTextColor(
+            Color.rgb(
+                220,
+                231,
+                255
+            )
+        )
+
+        // Resolve the contact photo using the same
+        // PhoneLookup approach as the working messages repo.
+        Thread {
+            try {
+
+                val lookupUri =
+                    Uri.withAppendedPath(
+                        ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                        Uri.encode(address)
+                    )
+
+                val photoUri =
+                    contentResolver.query(
+                        lookupUri,
+                        arrayOf(
+                            ContactsContract.PhoneLookup.PHOTO_URI
+                        ),
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+
+                        if (cursor.moveToFirst()) {
+
+                            val index =
+                                cursor.getColumnIndex(
+                                    ContactsContract.PhoneLookup.PHOTO_URI
+                                )
+
+                            if (index >= 0) {
+                                cursor.getString(index)
+                            } else {
+                                null
+                            }
+
+                        } else {
+                            null
+                        }
+                    }
+
+                if (photoUri.isNullOrBlank()) {
+                    return@Thread
+                }
+
+                runOnUiThread {
+
+                    try {
+
+                        val photo =
+                            ImageView(this)
+
+                        photo.scaleType =
+                            ImageView.ScaleType.CENTER_CROP
+
+                        // Actual oval outline for clipping.
+                        photo.background =
+                            GradientDrawable().apply {
+                                shape =
+                                    GradientDrawable.OVAL
+
+                                setColor(
+                                    Color.TRANSPARENT
+                                )
+                            }
+
+                        photo.setImageURI(
+                            Uri.parse(photoUri)
+                        )
+
+                        if (photo.drawable == null) {
+                            return@runOnUiThread
+                        }
+
+                        if (
+                            android.os.Build.VERSION.SDK_INT >=
+                            android.os.Build.VERSION_CODES.LOLLIPOP
+                        ) {
+                            photo.clipToOutline = true
+                        }
+
+                        val border =
+                            GradientDrawable().apply {
+                                shape =
+                                    GradientDrawable.OVAL
+
+                                setColor(
+                                    Color.TRANSPARENT
+                                )
+
+                                setStroke(
+                                    dp(1),
+                                    Color.rgb(
+                                        63,
+                                        102,
+                                        199
+                                    )
+                                )
+                            }
+
+                        val photoContainer =
+                            android.widget.FrameLayout(this)
+
+                        photoContainer.background =
+                            border
+
+                        photoContainer.clipToOutline =
+                            true
+
+                        photoContainer.addView(
+                            photo,
+                            android.widget.FrameLayout.LayoutParams(
+                                dp(46),
+                                dp(46)
+                            )
+                        )
+
+                        /*
+                         * Replace the TextView avatar with
+                         * the photo while keeping its exact
+                         * header position and size.
+                         */
+                        val parent =
+                            avatar.parent
+                                as? android.view.ViewGroup
+
+                        if (parent != null) {
+
+                            val index =
+                                parent.indexOfChild(
+                                    avatar
+                                )
+
+                            val params =
+                                avatar.layoutParams
+
+                            parent.removeView(
+                                avatar
+                            )
+
+                            parent.addView(
+                                photoContainer,
+                                index,
+                                params
+                            )
+                        }
+
+                    } catch (_: Exception) {
+                    }
+                }
+
+            } catch (_: Exception) {
+                // Keep glass initial avatar.
+            }
+
+        }.start()
+
+        // Use the same glass-blue avatar styling as the home screen.
+        avatar.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.argb(136, 26, 63, 134))
+            setStroke(
+                dp(1),
+                Color.rgb(63, 102, 199)
+            )
+        }
+
+        avatar.setTextColor(
+            Color.rgb(220, 231, 255)
+        )
+
+        // If this contact has a profile photo, show it instead of the initial.
+        try {
+            val photoUri = contentResolver.query(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                arrayOf(ContactsContract.PhoneLookup.PHOTO_URI),
+                null,
+                arrayOf(address),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getString(0)
+                } else {
+                    null
+                }
+            }
+
+            if (!photoUri.isNullOrBlank()) {
+                contentResolver.openInputStream(
+                    Uri.parse(photoUri)
+                )?.use { stream ->
+                    val bitmap = android.graphics.BitmapFactory.decodeStream(stream)
+
+                    if (bitmap != null) {
+                        val size = dp(46)
+
+                        val circularBitmap =
+                            android.graphics.Bitmap.createBitmap(
+                                size,
+                                size,
+                                android.graphics.Bitmap.Config.ARGB_8888
+                            )
+
+                        val canvas =
+                            android.graphics.Canvas(circularBitmap)
+
+                        val paint =
+                            android.graphics.Paint(
+                                android.graphics.Paint.ANTI_ALIAS_FLAG
+                            )
+
+                        val scale = maxOf(
+                            size.toFloat() / bitmap.width,
+                            size.toFloat() / bitmap.height
+                        )
+
+                        val scaledWidth =
+                            bitmap.width * scale
+
+                        val scaledHeight =
+                            bitmap.height * scale
+
+                        val left =
+                            (size - scaledWidth) / 2f
+
+                        val top =
+                            (size - scaledHeight) / 2f
+
+                        val path =
+                            android.graphics.Path().apply {
+                                addCircle(
+                                    size / 2f,
+                                    size / 2f,
+                                    size / 2f,
+                                    android.graphics.Path.Direction.CW
+                                )
+                            }
+
+                        canvas.save()
+                        canvas.clipPath(path)
+
+                        canvas.drawBitmap(
+                            bitmap,
+                            null,
+                            android.graphics.RectF(
+                                left,
+                                top,
+                                left + scaledWidth,
+                                top + scaledHeight
+                            ),
+                            paint
+                        )
+
+                        canvas.restore()
+
+                        val photoDrawable =
+                            android.graphics.drawable.BitmapDrawable(
+                                resources,
+                                circularBitmap
+                            )
+
+                        val borderDrawable =
+                            GradientDrawable().apply {
+                                shape = GradientDrawable.OVAL
+                                setColor(Color.TRANSPARENT)
+                                setStroke(
+                                    dp(1),
+                                    Color.rgb(63, 102, 199)
+                                )
+                            }
+
+                        avatar.background =
+                            android.graphics.drawable.LayerDrawable(
+                                arrayOf(
+                                    photoDrawable,
+                                    borderDrawable
+                                )
+                            )
+
+                        avatar.text = ""
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Keep the glass initial avatar if the photo cannot be loaded.
+        }
 
         messageList = findViewById(R.id.messageList)
         messageInput = findViewById(R.id.messageInput)
@@ -353,7 +681,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                         R.color.messages_surface
                     )
                 )
-                cornerRadius = dp(20).toFloat()
+                cornerRadius = dp(17).toFloat()
             }
         }
 
@@ -469,7 +797,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                             R.color.messages_surface
                         )
                     )
-                    cornerRadius = dp(20).toFloat()
+                    cornerRadius = dp(17).toFloat()
                 }
             )
             isOutsideTouchable = true
@@ -1270,6 +1598,8 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                 val statusIndex =
                     cursor.getColumnIndexOrThrow(Telephony.TextBasedSmsColumns.STATUS)
 
+                var lastMessageDay: String? = null
+
                 while (cursor.moveToNext()) {
                     val messageId = cursor.getLong(
                         cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
@@ -1280,6 +1610,17 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                     val status = cursor.getInt(statusIndex)
                     val messageAddress =
                         cursor.getString(addressIndex) ?: address
+
+                    val messageDay =
+                        java.text.SimpleDateFormat(
+                            "yyyy-MM-dd",
+                            java.util.Locale.getDefault()
+                        ).format(java.util.Date(date))
+
+                    if (messageDay != lastMessageDay) {
+                        addDateSeparator(date)
+                        lastMessageDay = messageDay
+                    }
 
                     addMessageBubble(
                         messageId = messageId,
@@ -1432,6 +1773,84 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
     }
 
+    private fun addDateSeparator(timestamp: Long) {
+        val dateView = TextView(this).apply {
+            val calendar = java.util.Calendar.getInstance()
+            calendar.timeInMillis = timestamp
+
+            val now = java.util.Calendar.getInstance()
+
+            val text = when {
+                calendar.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR) &&
+                calendar.get(java.util.Calendar.DAY_OF_YEAR) == now.get(java.util.Calendar.DAY_OF_YEAR) -> {
+                    "Today"
+                }
+
+                run {
+                    val yesterday = java.util.Calendar.getInstance()
+                    yesterday.add(java.util.Calendar.DAY_OF_YEAR, -1)
+
+                    calendar.get(java.util.Calendar.YEAR) == yesterday.get(java.util.Calendar.YEAR) &&
+                    calendar.get(java.util.Calendar.DAY_OF_YEAR) == yesterday.get(java.util.Calendar.DAY_OF_YEAR)
+                } -> {
+                    "Yesterday"
+                }
+
+                calendar.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR) -> {
+                    java.text.SimpleDateFormat(
+                        "EEEE",
+                        java.util.Locale.getDefault()
+                    ).format(java.util.Date(timestamp))
+                }
+
+                else -> {
+                    java.text.SimpleDateFormat(
+                        "d MMMM yyyy",
+                        java.util.Locale.getDefault()
+                    ).format(java.util.Date(timestamp))
+                }
+            }
+
+            this.text = text
+            textSize = 12f
+            setTextColor(
+                ContextCompat.getColor(
+                    this@ConversationActivity,
+                    R.color.messages_text_secondary
+                )
+            )
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+
+            setPadding(
+                dp(12),
+                dp(6),
+                dp(12),
+                dp(6)
+            )
+
+            background = GradientDrawable().apply {
+                setColor(android.graphics.Color.parseColor("#0CFFFFFF"))
+                setStroke(
+                    dp(1),
+                    android.graphics.Color.parseColor("#18FFFFFF")
+                )
+                cornerRadius = dp(18).toFloat()
+            }
+        }
+
+        val params = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.CENTER
+            topMargin = dp(10)
+            bottomMargin = dp(6)
+        }
+
+        messageList.addView(dateView, params)
+    }
+
     private fun addMessageBubble(
         messageId: Long,
         body: String,
@@ -1461,7 +1880,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                 ContextCompat.getColor(
                     this@ConversationActivity,
                     if (outgoing) {
-                        android.R.color.black
+                        R.color.messages_text_primary
                     } else {
                         R.color.messages_text_primary
                     }
@@ -1478,12 +1897,36 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             includeFontPadding = true
 
             background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(20).toFloat()
+                cornerRadius = dp(17).toFloat()
 
                 if (outgoing) {
-                    setColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_outgoing_bubble))
+                    setColor(
+                        ContextCompat.getColor(
+                            this@ConversationActivity,
+                            R.color.messages_glass_outgoing
+                        )
+                    )
+                    setStroke(
+                        dp(1),
+                        ContextCompat.getColor(
+                            this@ConversationActivity,
+                            R.color.messages_glass_outgoing_border
+                        )
+                    )
                 } else {
-                    setColor(ContextCompat.getColor(this@ConversationActivity, R.color.messages_surface_variant))
+                    setColor(
+                        ContextCompat.getColor(
+                            this@ConversationActivity,
+                            R.color.messages_glass_incoming
+                        )
+                    )
+                    setStroke(
+                        dp(1),
+                        ContextCompat.getColor(
+                            this@ConversationActivity,
+                            R.color.messages_glass_incoming_border
+                        )
+                    )
                 }
             }
         }
@@ -1492,7 +1935,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             val selected = selectedMessageIds.contains(messageId)
 
             bubble.background = GradientDrawable().apply {
-                cornerRadius = dp(20).toFloat()
+                cornerRadius = dp(17).toFloat()
 
                 if (selected) {
                     setColor(
@@ -1505,14 +1948,14 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                     setColor(
                         ContextCompat.getColor(
                             this@ConversationActivity,
-                            R.color.messages_outgoing_bubble
+                            R.color.messages_glass_outgoing
                         )
                     )
                 } else {
                     setColor(
                         ContextCompat.getColor(
                             this@ConversationActivity,
-                            R.color.messages_surface_variant
+                            R.color.messages_glass_incoming
                         )
                     )
                 }
@@ -1522,7 +1965,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                 ContextCompat.getColor(
                     this@ConversationActivity,
                     if (outgoing) {
-                        android.R.color.black
+                        R.color.messages_text_primary
                     } else {
                         R.color.messages_text_primary
                     }
@@ -1552,18 +1995,13 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             true
         }
 
-        bubble.setOnClickListener {
-            if (selectionMode) {
-                toggleMessageSelection(messageId, body)
-            }
-        }
-
         if (selectionMode && selectedMessageIds.contains(messageId)) {
             updateBubbleSelection()
         }
 
         val time = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
             gravity = Gravity.CENTER_VERTICAL
             setPadding(
                 dp(6),
@@ -1669,6 +2107,19 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
             )
+        }
+
+        bubble.setOnClickListener {
+            if (selectionMode) {
+                toggleMessageSelection(messageId, body)
+            } else {
+                time.visibility =
+                    if (time.visibility == View.VISIBLE) {
+                        View.GONE
+                    } else {
+                        View.VISIBLE
+                    }
+            }
         }
 
         container.addView(
@@ -2530,7 +2981,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
                 setColor(
                     ContextCompat.getColor(
                         this@ConversationActivity,
-                        R.color.messages_surface_variant
+                        R.color.messages_glass_incoming
                     )
                 )
             }
@@ -2833,7 +3284,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         val fieldBackground =
             ContextCompat.getColor(
                 this,
-                R.color.messages_surface_variant
+                R.color.messages_glass_incoming
             )
 
         val primaryColor =
@@ -2858,7 +3309,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             )
             background = GradientDrawable().apply {
                 setColor(dialogBackground)
-                cornerRadius = dp(20).toFloat()
+                cornerRadius = dp(17).toFloat()
             }
         }
 

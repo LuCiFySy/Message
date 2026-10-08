@@ -136,14 +136,15 @@
             android:paddingEnd="16dp"
             android:visibility="gone">
 
-            <TextView
+            <ImageButton
                 android:id="@+id/searchBack"
                 android:layout_width="40dp"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:text="‹"
-                android:textColor="@color/messages_text_primary"
-                android:textSize="32sp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Back"
+                android:padding="8dp"
+                android:src="@drawable/ic_arrow_back"
+                android:tint="@color/messages_text_primary"
                 android:clickable="true"
                 android:focusable="true" />
 
@@ -194,7 +195,7 @@
                     android:paddingStart="18dp"
                     android:paddingEnd="18dp"
                     android:text="All Messages"
-                    android:textColor="@color/messages_on_primary"
+                    android:textColor="#DCE7FF"
                     android:textSize="14sp"
                     android:textStyle="bold" />
 
@@ -277,7 +278,7 @@
         android:paddingStart="20dp"
         android:paddingEnd="20dp"
         android:text="＋  Start chat"
-        android:textColor="@color/messages_on_primary"
+        android:textColor="#DCE7FF"
         android:textSize="15sp"
         android:textStyle="bold" />
 
