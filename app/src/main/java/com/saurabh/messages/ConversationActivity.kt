@@ -36,6 +36,7 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.provider.Settings
 import android.widget.ScrollView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -124,10 +125,12 @@ class ConversationActivity : AppCompatActivity() {
         }
 
     private var selectionMode = false
+    private lateinit var selectionBackCallback: OnBackPressedCallback
     private var pendingForwardText: String? = null
     private lateinit var popupWindow: PopupWindow
     private val selectedMessageIds = LinkedHashSet<Long>()
     private val selectedMessageBodies = LinkedHashMap<Long, String>()
+    private val messageBubbles = LinkedHashMap<Long, TextView>()
 
     private val messagesChangedReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
@@ -145,6 +148,13 @@ class ConversationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_conversation)
+
+        selectionBackCallback = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                exitSelectionMode()
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, selectionBackCallback)
 
         val conversationRoot = findViewById<View>(R.id.conversationRoot)
         val composerContainer = findViewById<View>(R.id.composerContainer)
@@ -1263,6 +1273,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
     }
 
     private fun loadMessages() {
+        messageBubbles.clear()
         messageList.removeAllViews()
 
         val projection = arrayOf(
@@ -1629,46 +1640,11 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         }
 
         fun updateBubbleSelection() {
-            val selected = selectedMessageIds.contains(messageId)
-
-            bubble.background = GradientDrawable().apply {
-                cornerRadius = dp(17).toFloat()
-
-                if (selected) {
-                    setColor(
-                        ContextCompat.getColor(
-                            this@ConversationActivity,
-                            R.color.messages_selection_background
-                        )
-                    )
-                } else if (outgoing) {
-                    setColor(
-                        ContextCompat.getColor(
-                            this@ConversationActivity,
-                            R.color.messages_glass_outgoing
-                        )
-                    )
-                } else {
-                    setColor(
-                        ContextCompat.getColor(
-                            this@ConversationActivity,
-                            R.color.messages_glass_incoming
-                        )
-                    )
-                }
-            }
-
-            bubble.setTextColor(
-                ContextCompat.getColor(
-                    this@ConversationActivity,
-                    if (outgoing) {
-                        R.color.messages_text_primary
-                    } else {
-                        R.color.messages_text_primary
-                    }
-                )
-            )
+            updateMessageBubbleSelection(messageId)
         }
+
+        bubble.tag = outgoing
+        messageBubbles[messageId] = bubble
 
         bubble.setOnLongClickListener {
             if (selectionMode && selectedMessageIds.contains(messageId)) {
@@ -1681,6 +1657,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
 
             if (!selectionMode) {
                 selectionMode = true
+                selectionBackCallback.isEnabled = true
                 selectedMessageIds.clear()
                 selectedMessageBodies.clear()
             }
@@ -1688,7 +1665,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             selectedMessageIds.add(messageId)
             selectedMessageBodies[messageId] = body
             updateSelectionToolbar()
-            updateBubbleSelection()
+            updateMessageBubbleSelection(messageId)
             true
         }
 
@@ -2006,9 +1983,62 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
         return text
     }
 
+    private fun updateMessageBubbleSelection(messageId: Long) {
+        val bubble = messageBubbles[messageId] ?: return
+        val selected = selectedMessageIds.contains(messageId)
+        val outgoing = bubble.tag as? Boolean ?: false
+
+        bubble.background = GradientDrawable().apply {
+            cornerRadius = dp(17).toFloat()
+            if (selected) {
+                // Soft translucent amber tint, rather than a solid yellow fill.
+                setColor(android.graphics.Color.argb(58, 255, 183, 77))
+                setStroke(
+                    dp(2),
+                    android.graphics.Color.argb(175, 255, 205, 130)
+                )
+            } else if (outgoing) {
+                setColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_glass_outgoing
+                    )
+                )
+                setStroke(
+                    dp(1),
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_glass_outgoing_border
+                    )
+                )
+            } else {
+                setColor(
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_glass_incoming
+                    )
+                )
+                setStroke(
+                    dp(1),
+                    ContextCompat.getColor(
+                        this@ConversationActivity,
+                        R.color.messages_glass_incoming_border
+                    )
+                )
+            }
+        }
+        bubble.setTextColor(
+            ContextCompat.getColor(
+                this@ConversationActivity,
+                R.color.messages_text_primary
+            )
+        )
+    }
+
     private fun toggleMessageSelection(messageId: Long, body: String) {
         if (!selectionMode) {
             selectionMode = true
+            selectionBackCallback.isEnabled = true
             selectedMessageIds.clear()
             selectedMessageBodies.clear()
         }
@@ -2025,7 +2055,7 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
             exitSelectionMode()
         } else {
             updateSelectionToolbar()
-            loadMessages()
+            updateMessageBubbleSelection(messageId)
         }
     }
 
@@ -2211,21 +2241,50 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
 
     private fun enterMessageSelection(messageId: Long, body: String) {
         selectionMode = true
+        selectionBackCallback.isEnabled = true
         selectedMessageIds.clear()
         selectedMessageBodies.clear()
         selectedMessageIds.add(messageId)
         selectedMessageBodies[messageId] = body
         updateSelectionToolbar()
-        loadMessages()
+        updateMessageBubbleSelection(messageId)
     }
 
     private fun updateSelectionToolbar() {
-        findViewById<View>(R.id.messageSelectionToolbar).visibility = View.VISIBLE
+        val toolbar = findViewById<View>(R.id.messageSelectionToolbar)
+        val scrollView = findViewById<android.widget.ScrollView>(R.id.messageScroll)
 
-        findViewById<View>(R.id.backButton).visibility = View.GONE
-        findViewById<View>(R.id.conversationAvatar).visibility = View.GONE
-        findViewById<View>(R.id.conversationTitle).visibility = View.GONE
-        findViewById<View>(R.id.conversationAddress).visibility = View.GONE
+        if (toolbar.visibility != View.VISIBLE) {
+            val previousHeight = scrollView.height
+            val previousScrollY = scrollView.scrollY
+            val wasAtBottom = !scrollView.canScrollVertically(1)
+
+            // Apply the viewport adjustment before the next frame is drawn,
+            // avoiding a visible intermediate scroll position.
+            val observer = scrollView.viewTreeObserver
+            val preDrawListener = object : android.view.ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    if (scrollView.viewTreeObserver.isAlive) {
+                        scrollView.viewTreeObserver.removeOnPreDrawListener(this)
+                    }
+
+                    val heightDelta = previousHeight - scrollView.height
+                    if (heightDelta > 0) {
+                        val targetY = if (wasAtBottom) {
+                            (scrollView.getChildAt(0)?.height ?: 0) - scrollView.height
+                        } else {
+                            previousScrollY + heightDelta
+                        }
+                        scrollView.scrollTo(0, targetY.coerceAtLeast(0))
+                    }
+                    return true
+                }
+            }
+            observer.addOnPreDrawListener(preDrawListener)
+
+            // The contact header stays visible; the toolbar is its own row.
+            toolbar.visibility = View.VISIBLE
+        }
 
         findViewById<TextView>(R.id.messageSelectionCount).text =
             "${selectedMessageIds.size} selected"
@@ -2249,16 +2308,13 @@ findViewById<TextView>(R.id.conversationTitle).text = contactName
 
     private fun exitSelectionMode() {
         selectionMode = false
+        selectionBackCallback.isEnabled = false
         selectedMessageIds.clear()
         selectedMessageBodies.clear()
 
         findViewById<View>(R.id.messageSelectionToolbar).visibility = View.GONE
 
-        findViewById<View>(R.id.backButton).visibility = View.VISIBLE
-        findViewById<View>(R.id.conversationAvatar).visibility = View.VISIBLE
-        findViewById<View>(R.id.conversationTitle).visibility = View.VISIBLE
-        findViewById<View>(R.id.conversationAddress).visibility = View.VISIBLE
-
+        // The contact header remains visible throughout selection mode.
         loadMessages()
     }
 

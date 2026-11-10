@@ -1,0 +1,8 @@
+<resources>
+    <color name="backup_glass_surface">#141A3F86</color>
+    <color name="backup_glass_border">#283F5FAD</color>
+    <color name="backup_glass_accent">#8FB3FF</color>
+    <color name="backup_glass_button">#1A1A3F86</color>
+    <color name="backup_glass_button_border">#553F66C7</color>
+    <color name="backup_glass_button_text">#B8CCFF</color>
+</resources>

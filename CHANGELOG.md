@@ -37,3 +37,7 @@
 ### Build
 - Updated release build to v1.1.0.
 
+
+## v1.2.69
+
+69 buttloads of UI changes and added message backup and restore feature..

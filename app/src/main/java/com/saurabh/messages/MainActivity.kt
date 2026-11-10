@@ -27,6 +27,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -50,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchInput: EditText
 
     private var selectionMode = false
+    private lateinit var selectionBackCallback: OnBackPressedCallback
     private var pendingSharedText: String? = null
     private var sharePickerOpen = false
     private var smsRoleRequestInProgress = false
@@ -128,6 +130,13 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        selectionBackCallback = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                exitSelectionMode()
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, selectionBackCallback)
 
         if (intent.action == Intent.ACTION_SEND) {
             pendingSharedText =
@@ -340,17 +349,18 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            dialog.setOnShowListener {
-                dialog.window?.setBackgroundDrawable(
-                    android.graphics.drawable.ColorDrawable(
-                        android.graphics.Color.TRANSPARENT
-                    )
+            // Configure the dialog window before it is shown so Android
+            // performs its first layout at the final size, avoiding a second
+            // resize/reposition immediately after the entrance animation.
+            dialog.window?.setBackgroundDrawable(
+                android.graphics.drawable.ColorDrawable(
+                    android.graphics.Color.TRANSPARENT
                 )
-                dialog.window?.setLayout(
-                    dp(330),
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            }
+            )
+            dialog.window?.setLayout(
+                dp(330),
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
 
             dialog.show()
         }
@@ -918,6 +928,78 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
+                // Include MMS-only conversations as well. MMS dates are stored in seconds,
+                // while SMS dates are stored in milliseconds.
+                contentResolver.query(
+                    Telephony.Mms.CONTENT_URI,
+                    arrayOf(Telephony.Mms._ID, Telephony.Mms.THREAD_ID, Telephony.Mms.DATE, Telephony.Mms.READ, Telephony.Mms.MESSAGE_BOX),
+                    null,
+                    null,
+                    "${Telephony.Mms.DATE} DESC"
+                )?.use { mmsCursor ->
+                    val idIndex = mmsCursor.getColumnIndexOrThrow(Telephony.Mms._ID)
+                    val threadIndex = mmsCursor.getColumnIndexOrThrow(Telephony.Mms.THREAD_ID)
+                    val dateIndex = mmsCursor.getColumnIndexOrThrow(Telephony.Mms.DATE)
+                    val readIndex = mmsCursor.getColumnIndexOrThrow(Telephony.Mms.READ)
+                    val boxIndex = mmsCursor.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX)
+                    while (mmsCursor.moveToNext()) {
+                        val mmsId = mmsCursor.getLong(idIndex)
+                        val threadId = mmsCursor.getString(threadIndex) ?: continue
+                        val date = mmsCursor.getLong(dateIndex) * 1000L
+                        val read = mmsCursor.getInt(readIndex)
+                        val box = mmsCursor.getInt(boxIndex)
+                        val addressUri = Uri.parse("content://mms/$mmsId/addr")
+                        var address: String? = null
+                        contentResolver.query(addressUri, arrayOf(Telephony.Mms.Addr.ADDRESS, Telephony.Mms.Addr.TYPE), null, null, null)?.use { addrCursor ->
+                            while (addrCursor.moveToNext()) {
+                                val candidate = addrCursor.getString(0)
+                                val type = addrCursor.getInt(1)
+                                if (!candidate.isNullOrBlank() && candidate != "insert-address-token" &&
+                                    ((box == Telephony.Mms.MESSAGE_BOX_INBOX && type == 137) ||
+                                     (box != Telephony.Mms.MESSAGE_BOX_INBOX && type == 151))) {
+                                    address = candidate
+                                    break
+                                }
+                            }
+                        }
+                        if (address.isNullOrBlank()) continue
+                        if (BlockHelper.isBlocked(this@MainActivity, address!!)) continue
+                        var body = "MMS message"
+                        contentResolver.query(Uri.parse("content://mms/$mmsId/part"), arrayOf(Telephony.Mms.Part.CONTENT_TYPE, Telephony.Mms.Part.TEXT), null, null, null)?.use { partCursor ->
+                            while (partCursor.moveToNext()) {
+                                val contentType = partCursor.getString(0).orEmpty()
+                                val text = partCursor.getString(1)
+                                if (contentType.startsWith("text/") && !text.isNullOrBlank()) { body = text; break }
+                            }
+                        }
+                        val displayName = if (contactNameCache.containsKey(address!!)) {
+                            contactNameCache[address!!] ?: address!!
+                        } else {
+                            val name = getContactName(address!!)
+                            contactNameCache[address!!] = name
+                            name ?: address!!
+                        }
+                        if (queryText.isNotEmpty()) {
+                            val query = queryText.lowercase(Locale.getDefault())
+                            if (!address!!.lowercase(Locale.getDefault()).contains(query) &&
+                                !displayName.lowercase(Locale.getDefault()).contains(query) &&
+                                !body.lowercase(Locale.getDefault()).contains(query)) continue
+                        }
+                        val existing = conversations[threadId]
+                        if (existing == null) {
+                            conversations[threadId] = Conversation(threadId, address!!, displayName, body, date, if (read == 0) 1 else 0)
+                        } else {
+                            conversations[threadId] = existing.copy(
+                                address = if (date > existing.date) address!! else existing.address,
+                                displayName = if (date > existing.date) displayName else existing.displayName,
+                                body = if (date > existing.date) body else existing.body,
+                                date = maxOf(existing.date, date),
+                                unreadCount = existing.unreadCount + if (read == 0) 1 else 0
+                            )
+                        }
+                    }
+                }
+
                 val archived = archivedThreads
 
                 val archiveIterator = conversations.entries.iterator()
@@ -953,7 +1035,7 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         emptyText.visibility = View.GONE
 
-                        conversations.values.forEach { conversation ->
+                        conversations.values.sortedByDescending { it.date }.forEach { conversation ->
                             addConversationView(conversation)
                         }
                     }
@@ -976,8 +1058,21 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun conversationSelectionBackground(): GradientDrawable {
+        return GradientDrawable().apply {
+            cornerRadius = dp(20).toFloat()
+            // Match the soft amber selection tint used by message bubbles.
+            setColor(Color.argb(58, 255, 183, 77))
+            setStroke(
+                dp(2),
+                Color.argb(175, 255, 205, 130)
+            )
+        }
+    }
+
     private fun enterSelectionMode(threadId: String) {
         selectionMode = true
+        selectionBackCallback.isEnabled = true
         selectedThreadIds.clear()
         selectedThreadIds.add(threadId)
 
@@ -993,6 +1088,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun exitSelectionMode() {
         selectionMode = false
+        selectionBackCallback.isEnabled = false
         selectedThreadIds.clear()
 
         findViewById<View>(R.id.selectionToolbar).visibility = View.GONE
@@ -1569,7 +1665,7 @@ class MainActivity : AppCompatActivity() {
             isFocusable = true
             background =
                 if (selectionMode && selectedThreadIds.contains(conversation.threadId)) {
-                    getDrawable(R.drawable.bg_conversation_selected)
+                    conversationSelectionBackground()
                 } else {
                     null
                 }
@@ -1730,8 +1826,14 @@ val textContainer = LinearLayout(this).apply {
                 if (selectedThreadIds.isEmpty()) {
                     exitSelectionMode()
                 } else {
+                    // Update only this row; don't rebuild the entire conversation list.
+                    row.background =
+                        if (selectedThreadIds.contains(conversation.threadId)) {
+                            conversationSelectionBackground()
+                        } else {
+                            null
+                        }
                     updateSelectionToolbar()
-                    loadConversations(searchInput.text.toString().trim())
                 }
             } else {
                 val intent = Intent(this, ConversationActivity::class.java).apply {

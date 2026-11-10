@@ -11,8 +11,8 @@ android {
         applicationId = "com.saurabh.messages"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 69
+        versionName = "1.2.69"
     }
 
     signingConfigs {

@@ -36,62 +36,39 @@ class SettingsActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(
-                ContextCompat.getColor(
-                    this@SettingsActivity,
-                    R.color.messages_background
-                )
+                ContextCompat.getColor(this@SettingsActivity, R.color.messages_background)
             )
+            clipToPadding = false
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(
-                0,
-                systemBars.top,
-                0,
-                systemBars.bottom
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout()
             )
+            view.setPadding(0, bars.top, 0, bars.bottom)
             insets
         }
 
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(24), 0, dp(16), 0)
+            setPadding(dp(28), 0, dp(20), 0)
         }
 
         val title = TextView(this).apply {
             text = "Settings"
-            textSize = 28f
+            textSize = 30f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER_VERTICAL
-            translationY = dp(4).toFloat()
-            setTextColor(
-                ContextCompat.getColor(
-                    this@SettingsActivity,
-                    R.color.messages_text_primary
-                )
-            )
+            setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.messages_text_primary))
         }
 
-        topBar.addView(
-            title,
-            LinearLayout.LayoutParams(
-                0,
-                dp(56),
-                1f
-            )
-        )
+        topBar.addView(title, LinearLayout.LayoutParams(0, dp(64), 1f))
+        root.addView(topBar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(64)
+        ))
 
-        root.addView(
-            topBar,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(56)
-            )
-        )
-
-        // Scrollable settings content
         val scrollView = ScrollView(this).apply {
             isFillViewport = true
             clipToPadding = false
@@ -99,103 +76,112 @@ class SettingsActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, dp(24))
+            setPadding(dp(20), dp(8), dp(20), dp(32))
         }
 
-        scrollView.addView(
-            content,
-            LinearLayout.LayoutParams(
+        scrollView.addView(content)
+        root.addView(scrollView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        fun section(label: String, card: LinearLayout) {
+            val heading = TextView(this).apply {
+                text = label.uppercase()
+                textSize = 12f
+                letterSpacing = 0.08f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.backup_glass_accent))
+                setPadding(dp(4), dp(22), dp(4), dp(10))
+            }
+            content.addView(heading)
+            content.addView(card, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        root.addView(
-            scrollView,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        )
-
-        // Messages section
-        val messagesSection = TextView(this).apply {
-            text = "Messages"
-            textSize = 14f
-            setPadding(dp(20), dp(28), dp(20), dp(10))
-            setTextColor(
-                ContextCompat.getColor(
-                    this@SettingsActivity,
-                    R.color.messages_text_secondary
-                )
-            )
+            ))
         }
 
-        content.addView(messagesSection)
+        fun card(): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = GradientDrawable().apply {
+                setColor(ContextCompat.getColor(this@SettingsActivity, R.color.backup_glass_surface))
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), ContextCompat.getColor(this@SettingsActivity, R.color.backup_glass_border))
+            }
+        }
 
+        fun divider(parent: LinearLayout) {
+            parent.addView(android.view.View(this).apply {
+                setBackgroundColor(ContextCompat.getColor(this@SettingsActivity, R.color.messages_divider))
+                alpha = 0.45f
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)
+            ).apply {
+                marginStart = dp(16)
+                marginEnd = dp(16)
+            })
+        }
+
+        val messagesCard = card()
         addSwitchRow(
-            content,
+            messagesCard,
             "Delivery reports",
             "Show delivery reports for sent messages",
             prefs.getBoolean("delivery_reports", false)
         ) { enabled ->
-            prefs.edit()
-                .putBoolean("delivery_reports", enabled)
-                .apply()
+            prefs.edit().putBoolean("delivery_reports", enabled).apply()
         }
+        section("Messages", messagesCard)
 
-        // Swipe actions section
-        val swipeSection = TextView(this).apply {
-            text = "Swipe actions"
-            textSize = 14f
-            setPadding(dp(20), dp(28), dp(20), dp(10))
-            setTextColor(
-                ContextCompat.getColor(
-                    this@SettingsActivity,
-                    R.color.messages_text_secondary
-                )
-            )
-        }
-
-        content.addView(swipeSection)
-
+        val swipeCard = card()
         addActionRow(
-            content,
+            swipeCard,
             "Swipe left",
-            prefs.getString(PREF_SWIPE_LEFT, SWIPE_ACTION_DELETE)
-                ?: SWIPE_ACTION_DELETE
-        ) {
-            showSwipeActionDialog(true)
-        }
-
+            prefs.getString(PREF_SWIPE_LEFT, SWIPE_ACTION_DELETE) ?: SWIPE_ACTION_DELETE
+        ) { showSwipeActionDialog(true) }
+        divider(swipeCard)
         addActionRow(
-            content,
+            swipeCard,
             "Swipe right",
-            prefs.getString(PREF_SWIPE_RIGHT, SWIPE_ACTION_ARCHIVE)
-                ?: SWIPE_ACTION_ARCHIVE
-        ) {
-            showSwipeActionDialog(false)
-        }
+            prefs.getString(PREF_SWIPE_RIGHT, SWIPE_ACTION_ARCHIVE) ?: SWIPE_ACTION_ARCHIVE
+        ) { showSwipeActionDialog(false) }
+        section("Swipe actions", swipeCard)
 
-        // Privacy section
-        val privacySection = TextView(this).apply {
-            text = "Privacy"
-            textSize = 14f
-            setPadding(dp(20), dp(28), dp(20), dp(10))
-            setTextColor(
-                ContextCompat.getColor(
-                    this@SettingsActivity,
-                    R.color.messages_text_secondary
-                )
-            )
-        }
+        val privacyCard = card()
+        addBlockedContactsRow(privacyCard)
+        section("Privacy", privacyCard)
 
-        content.addView(privacySection)
-
-        addBlockedContactsRow(content)
+        val dataCard = card()
+        addBackupRestoreRow(dataCard)
+        section("Data", dataCard)
 
         setContentView(root)
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun addBackupRestoreRow(parent: LinearLayout) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(15), dp(16), dp(15))
+            setOnClickListener {
+                startActivity(android.content.Intent(this@SettingsActivity, BackupRestoreActivity::class.java))
+            }
+        }
+        val title = TextView(this).apply {
+            text = "Backup & Restore"
+            textSize = 16f
+            setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.messages_text_primary))
+        }
+        row.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val arrow = TextView(this).apply {
+            text = "›"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.messages_text_secondary))
+        }
+        row.addView(arrow, LinearLayout.LayoutParams(dp(32), dp(40)))
+        parent.addView(row)
     }
 
     private fun addSwitchRow(
@@ -208,7 +194,7 @@ class SettingsActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(12), dp(16), dp(12))
+            setPadding(dp(16), dp(15), dp(14), dp(15))
         }
 
         val textContainer = LinearLayout(this).apply {
@@ -252,9 +238,13 @@ class SettingsActivity : AppCompatActivity() {
 
         val switch = SwitchCompat(this).apply {
             isChecked = checked
-            setOnCheckedChangeListener { _, enabled ->
-                onChanged(enabled)
-            }
+            thumbTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this@SettingsActivity, R.color.backup_glass_accent)
+            )
+            trackTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this@SettingsActivity, R.color.backup_glass_border)
+            )
+            setOnCheckedChangeListener { _, enabled -> onChanged(enabled) }
         }
 
         row.addView(switch)
@@ -321,7 +311,7 @@ class SettingsActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(14), dp(16), dp(14))
+            setPadding(dp(16), dp(15), dp(10), dp(15))
             setOnClickListener {
                 showBlockedContacts()
             }
